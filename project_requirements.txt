@@ -1,0 +1,98 @@
+You are helping a candidate build the highest-impact personal project to land a Data / Quant role at Risk Labs (the team behind Across Protocol and UMA).
+
+Project name: Across Liquidity Fragmentation  
+Goal: A live, beautiful dashboard that shows exactly where relayer capital is getting stuck across 15+ chains and predicts when each chain will run out of liquidity.  
+This directly solves Across’s publicly-stated beautifulottleneck in 2025: capital rotation stuck at ~8× per day because of liquidity fragmentation.
+
+Across documentation source: https://docs.across.to/
+
+Why this project wins the job:
+- Uses only public data (Dune + tiny on-chain calls)
+- Demonstrates deep understanding of Across V3 mechanics (intents, relayers, SpokePools)
+- Shows immediate business impact: “Base runs dry in 1.4 hours” → product/eng can act instantly
+
+Exact requirements – the dashboard MUST show (live, every 15 minutes):
+1. Net flow matrix last 1h / 6h / 24h (which directions are imbalanced)
+2. Current relayer capital per chain (USD)
+3. Hours until dry per chain (capital ÷ hourly outflow) with red/yellow/green alerts
+4. Gini fragmentation score + historical trend
+5. Post-bridge user behavior heatmap (where money goes next: idle / yield / bridge again)
+6. LLM-powered natural language summary + recommendation (e.g. “Prioritise Unichain launch: 28% of arrived capital sits idle >48h”)
+
+Tech stack (must be simple and cheap):
+- 100% Python
+- Data → Dune SQL (primary) + tiny web3.py RPC fallback for current capital
+- Dashboard → Streamlit (deploy free on Streamlit Community Cloud or GitHub Pages)
+- No paid APIs, no heavy infra
+
+
+Spoke Pool contract addresses:
+Chain Name         Chain ID     SpokePool Address
+------------------ ------------ --------------------------------------------
+Ethereum Mainnet   1                0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5
+Arbitrum One       42161            0xe35e9842fceaca96570b734083f4a58e8f7c5f2a
+Optimism           10               0x6f26Bf09B1C792e3228e5467807a900A503c0281
+Base               8453         0x09aea4b2242a3bD9a4F7fF57a9F4c8B1eE4f1D8
+Polygon            137         0x0330E9b4D0325cCfF515E81DFbc7754F2a02ac57
+BNBChain          56          0x4e8E101924eDE233C13e2D8622DC8aED2872d505
+Gnosis             100         0x3d7A95E78a3D9e9b0c5C6e0d4b4e4e4b4e4e4e4
+Linea              59144       0x4D9079Bb4165aeb4084c526aF2eE6C3eC0c8a7b3
+Zora               7777777     0x13fDac9F9b4777705db45291bbFF3c972c6d1d97
+Scroll             534352      0x9c4ec768c28520B50860ea7a15bd7213a9fFc58
+Blast              81457       0x2D2eaDa6c3aC5f5B8381B73448e87d3e57c9A18
+Mode               34443       0x5c7BCd6E7De5423a6D43b243d3aC8a9c8aD5a6b2
+Redstone           690              0x9c4ec768c28520B50860ea7a15bd7213a9fFc58
+Unichain           130              0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64
+WorldChain        480               0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64
+Mona               140              0xd2ecb3afe598b746F8123CaE365a598DA831A449
+HyperEVM           999              0x35E63eA3eb0fb7A3bc543C71FB66412e1F6B0E04
+zksync            324               0xE0B015E54d54fc84a6cB9B666099c46adE9335FF
+solana            34268394551451         DLv3NggMiSaef97YCkew5xKUHDh13tVGZ7tydt3ZeAru
+plasma            34268394551451         0x0330E9b4D0325cCfF515E81DFbc7754F2a02ac57
+
+
+
+Dune Analytics:
+Every chain has its own schema under across_v3.<chain>_spokepool
+Example for Base: across_v3.base_spokepool
+
+Key tables and their exact columns:
+
+1. fillV3Relay → instant fills (money arriving on destination chain)
+
+Column                  | Type           | Description (what it actually means)
+------------------------|----------------|-------------------------------------------------------
+contract_address        | varbinary      | SpokePool address → tells you the destination chain
+call_success            | boolean        | Was the fill successful? (almost always true)
+call_tx_hash            | varbinary      | Transaction hash (open on block explorer)
+call_tx_from            | varbinary      | Who sent the tx (usually the relayer or a bot)
+call_tx_to              | varbinary      | Same as contract_address (the SpokePool)
+call_tx_index           | integer        | Position of tx in block (ignore)
+call_trace_address      | array(bigint)  | Internal call path (ignore)
+call_block_time         | timestamp      | Exact moment user received money on destination chain
+call_block_number       | bigint         | Block number (ignore)
+call_block_date         | date           | Date part of block_time
+relayData               | varchar        | Giant JSON string → contains all the real data (amounts, tokens, chains, addresses)
+repaymentChainId        | uint256        | Chain ID where the relayer will eventually get repaid → origin chain
+   
+Example sql query:
+SELECT * FROM across_v3_base.base_spokepool_call_fillv3relay limit 5;
+Output SQL query:
+
+2. executeRelayerRefundLeaf → repayments (capital freed again)
+   Columns vary slightly per chain but always contain:
+   - chainId
+   - repaymentToken
+   - repaymentAmount (uint256)
+   - block_time
+
+3. depositfunction → user started a bridge (origin chain outflow)
+   Similar structure to fillV3Relay
+
+Chains currently decoded on Dune (use all of them):
+Base, Arbitrum, Ethereum, Optimism, Polygon, Unichain, Blast, Scroll, Zora, WorldChain, Ink, Lens, ZkSync, Linea + more coming weekly
+
+SpokePool → Chain mapping (hardcode this dictionary in code):
+{
+
+}
