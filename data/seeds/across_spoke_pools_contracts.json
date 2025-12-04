@@ -1,0 +1,17 @@
+{
+    "Arbitrum_SpokePool": "0xe35e9842fceaca96570b734083f4a58e8f7c5f2a",
+    "Base_SpokePool": "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
+    "BSC_SpokePool": "0x4e8E101924eDE233C13e2D8622DC8aED2872d505",
+    "Ethereum_SpokePool": "0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5",
+    "Optimism_SpokePool": "0x6f26Bf09B1C792e3228e5467807a900A503c0281",
+    "Polygon_SpokePool": "0x0330E9b4D0325cCfF515E81DFbc7754F2a02ac57",
+    "HyperEVM_SpokePool": "0x35E63eA3eb0fb7A3bc543C71FB66412e1F6B0E04",
+    "Linea_SpokePool": "0x7E63A5f1a8F0B4d0934B2f2327DAED3F6bb2ee75",
+    "Zora_SpokePool": "0x13fDac9F9b4777705db45291bbFF3c972c6d1d97",
+    "WorldChain_SpokePool": "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
+    "zkSync_SpokePool": "0xE0B015E54d54fc84a6cB9B666099c46adE9335FF",
+    "Unichain_SpokePool": "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
+    "Scroll_SpokePool": "0x3bad7ad0728f9917d1bf08af5782dcbd516cdd96",
+    "Redstone_SpokePool": "0x13fDac9F9b4777705db45291bbFF3c972c6d1d97",
+    "Plasma_SpokePool": "0x50039fAEfebef707cFD94D6d462fE6D10B39207a",
+}
