@@ -16,6 +16,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
+#import helper functions
+from extract_utils import save_logs_to_jsonl
+
 # project root directory (3 levels up from this script)
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -213,32 +216,6 @@ def extract_all_logs(from_block, to_block, topic, chunk_size=10000):
     return all_logs
 
 
-def append_logs_to_jsonl(logs: list, output_file: str) -> int:
-    """
-    Appends logs to a JSONL (JSON Lines) file.
-    
-    Parameters:
-    -----------
-    logs : list
-        List of log dictionaries to append to file
-    output_file : str
-        Path to the .jsonl file (will be created if doesn't exist)
-    
-    Returns:
-    --------
-    int: Number of logs written in this call
-    """
-    # Open file in append mode ("a")
-    # Each call adds new lines without overwriting existing content
-    with open(output_file, "a", encoding="utf-8") as f:
-        for log in logs:
-            # json.dumps() converts dict to compact JSON string (no indent)
-            # We add newline (\n) after each log to create one-log-per-line format
-            f.write(json.dumps(log) + "\n")
-    
-    return len(logs)
-
-
 def airflow_extract_logs(chain_name: str, start_date: str, end_date: str) -> Dict[str, Any]:
     """
     Airflow-compatible extraction function.
@@ -349,7 +326,7 @@ def airflow_extract_logs(chain_name: str, start_date: str, end_date: str) -> Dic
         topic_logs = extract_all_logs(start_block, end_block, topic)
         
         # Immediately write to file (no need to store in memory)
-        logs_written = append_logs_to_jsonl(topic_logs, output_file)
+        logs_written = save_logs_to_jsonl(topic_logs, output_file)
         total_logs += logs_written
         
         print(f"[Airflow] Saved {logs_written} logs for this topic → {output_file}")
