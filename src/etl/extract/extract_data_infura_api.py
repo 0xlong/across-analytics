@@ -15,14 +15,15 @@ import json
 from datetime import datetime
 from typing import Optional
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
 # =============================================================================
 # CONFIGURATION - Edit these values as needed
 # =============================================================================
 
 # Your Infura API key (get one at https://infura.io)
-INFURA_API_KEY = os.getenv("INFURA_API_KEY", "YOUR_INFURA_API_KEY_HERE")
-INFURA_API_KEY = "310a8e59f6d94804af72c7221dd6aa20"
+INFURA_API_KEY = os.getenv("INFURA_API_KEY")
 
 # Infura endpoint for Arbitrum mainnet
 INFURA_URL = f"https://arbitrum-mainnet.infura.io/v3/{INFURA_API_KEY}"
