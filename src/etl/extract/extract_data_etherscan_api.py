@@ -1,214 +1,108 @@
 """
-extract_data_etherscan_api.py
+extract_data_etherscan_api_simply.py
 
-ETL extraction module for Etherscan-compatible APIs.
-Saves raw data to JSON files for downstream processing.
+Simple Etherscan API extractor - extracts blockchain event logs and saves to JSONL.
+
+Output Format: JSONL (JSON Lines) - one JSON object per line for memory efficiency.
 """
 
 import requests
 import json
-from datetime import datetime
-from typing import Optional, Dict, List
-import os
 import time
+import os
+from datetime import datetime
+from typing import Optional, Dict, Any
+from pathlib import Path
 from dotenv import load_dotenv
-
-# Load environment variables from .env file
 load_dotenv()
 
-# Calculate project root directory (3 levels up from this script)
-# This script is at: PROJECT_ROOT/src/etl/extract/extract_data_etherscan_api.py
-# We need to go up 3 levels to reach PROJECT_ROOT
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+# project root directory (3 levels up from this script)
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
 
-
-# =============================================================================
-# HELPER FUNCTIONS
-# =============================================================================
-
-def get_chain_id_from_name(chain_name: str, seeds_file: str = None) -> str:
+def get_chain_params(chain_name: str, json_path: str = os.path.join(PROJECT_ROOT, "data", "seeds", "tokens_contracts_per_chain.json")) -> Optional[Dict[str, Any]]:
     """
-    Converts chain name to chain ID using seeds file.
+    Retrieve all parameters for a specific blockchain chain from the tokens configuration file.
     
-    How it works:
-    1. Loads chain_ids.json from data/seeds folder
-    2. Searches for matching chain name (case-insensitive)
-    3. Returns the chain ID as string
-    
-    Args:
-        chain_name: Name of blockchain (e.g., "Arbitrum", "Ethereum", "Base")
-        seeds_file: Path to chain_ids.json file (defaults to PROJECT_ROOT/data/seeds/chain_ids.json)
-    
-    Returns:
-        Chain ID as string (e.g., "42161" for Arbitrum, "1" for Ethereum)
-    
-    Raises:
-        ValueError: If chain name not found in seeds file
-    
-    Example:
-        >>> get_chain_id_from_name("Arbitrum")
-        "42161"
-        >>> get_chain_id_from_name("ethereum")  # case-insensitive
-        "1"
     """
-    # Use default path if not provided
-    if seeds_file is None:
-        seeds_file = os.path.join(PROJECT_ROOT, "data", "seeds", "chain_ids.json")
+    # Load the JSON configuration file
+    config_path = Path(json_path)
+    with open(config_path, 'r', encoding='utf-8') as file:
+        chains_data = json.load(file)
     
-    # Load the seeds file
-    with open(seeds_file, 'r') as f:
-        chains = json.load(f)
-    
-    # Search for chain name (case-insensitive)
+    # Convert the input chain_name to lowercase for case-insensitive matching
     chain_name_lower = chain_name.lower()
     
-    for chain in chains:
-        if chain["chain_name"].lower() == chain_name_lower:
-            # Return chain_id as string (API requires string)
-            return str(chain["chain_id"])
+    # Retrieve the chain parameters using the lowercase key
+    chain_params = chains_data.get(chain_name_lower)
     
-    # Chain not found
-    raise ValueError(f"Chain '{chain_name}' not found in {seeds_file}")
-
-
-def get_contract_address_from_chain(chain_name: str, contracts_file: str = None) -> str:
-    """
-    Gets Across Spoke Pool contract address for a given chain.
-    
-    How it works:
-    1. Loads across_spoke_pools_contracts.json from data/seeds folder
-    2. Looks up contract address by chain name (case-insensitive)
-    3. Returns the contract address
-    
-    Args:
-        chain_name: Name of blockchain (e.g., "Arbitrum", "Ethereum", "Base")
-        contracts_file: Path to contracts JSON file (defaults to PROJECT_ROOT/data/seeds/across_spoke_pools_contracts.json)
-    
-    Returns:
-        Contract address for the chain (e.g., "0xe35e9842fceaca96570b734083f4a58e8f7c5f2a")
-    
-    Raises:
-        ValueError: If chain name not found in contracts file
-    
-    Example:
-        >>> get_contract_address_from_chain("Arbitrum")
-        "0xe35e9842fceaca96570b734083f4a58e8f7c5f2a"
-        >>> get_contract_address_from_chain("arbitrum")  # case-insensitive
-        "0xe35e9842fceaca96570b734083f4a58e8f7c5f2a"
-    """
-    # Use default path if not provided
-    if contracts_file is None:
-        contracts_file = os.path.join(PROJECT_ROOT, "data", "seeds", "across_spoke_pools_contracts.json")
-    
-    # Load the contracts file
-    with open(contracts_file, 'r') as f:
-        contracts = json.load(f)
-    
-    # Look up contract address (case-insensitive key match)
-    # Convert input chain_name to lowercase for comparison
-    chain_name_lower = chain_name.lower()
-    
-    # Loop through all contract keys and compare in lowercase
-    for key in contracts.keys():
-        if key.lower() == chain_name_lower:
-            # Return the contract address in lowercase (standardized format)
-            return contracts[key].lower()
-    
-    # Chain not found
-    raise ValueError(f"Chain '{chain_name}' not found in {contracts_file}")
-
+    return chain_params
 
 # =============================================================================
-# CORE API FUNCTIONS
+# CORE FUNCTIONS
 # =============================================================================
 
-def make_api_call(
-    api_url: str,
-    api_key: str,
-    chain_id: str,
-    params: dict,
-    retry_count: int = 3
-) -> dict:
+def api_call(params):
     """
-    Makes a REST API call to any Etherscan-compatible API.
+    Makes API call to Etherscan with retry logic.
     
     How it works:
-    1. Adds authentication (API key + chain ID)
-    2. Sends GET request with retry logic
-    3. Handles rate limiting automatically
-    
-    Args:
-        api_url: Base URL of the API (e.g., https://api.etherscan.io/v2/api)
-        api_key: Your API authentication key
-        chain_id: Blockchain chain ID (e.g., "42161" for Arbitrum)
-        params: Query parameters for the specific API call
-        retry_count: Number of retry attempts on failures
-    
-    Returns:
-        Parsed JSON response from API
+    - Adds API key and chain ID to parameters
+    - Sends GET request to Etherscan API
+    - Retries 3 times if network fails
+    - Returns parsed JSON response
     """
-    # Add required authentication parameters
-    params["chainid"] = chain_id
-    params["apikey"] = api_key
+    # Add authentication parameters
+    params["chainid"] = CHAIN_ID
+    params["apikey"] = API_KEY
     
-    for attempt in range(retry_count):
+    # Retry up to 3 times
+    for attempt in range(3):
         try:
-            print(f"API call attempt {attempt + 1}/3")
-            # Make GET request with timeout
-            response = requests.get(api_url, params=params, timeout=30)
+
+            # print(f"\nAPI call attempt {attempt + 1}/3") # for debugging
+            # Make API request with 30 second timeout
+            response = requests.get(API_URL, params=params, timeout=30)
             result = response.json()
             
-            # Check API status ("1" = success, "0" = error)
-            if result.get("status") == "0":
-                error_msg = result.get("message", "Unknown error")
-                
-                # Handle rate limiting with exponential backoff
-                if "rate limit" in error_msg.lower():
-                    if attempt < retry_count - 1:
-                        wait_time = 5 * (attempt + 1)
-                        print(f"    Rate limit hit, waiting {wait_time}s...")
-                        time.sleep(wait_time)
-                        continue
-                
-                # "No records found" is valid - return empty result
-                if "no records found" in error_msg.lower():
-                    return {"status": "1", "message": "OK", "result": []}
-                
-                raise Exception(f"API Error: {error_msg} | Details: {error_result}")
+            # Check if API returned success status
+            if result.get("status") == "1":
+                return result
             
-            return result
+            # Handle "no records found" as valid empty result
+            if "no records found" in result.get("message", "").lower():
+                return {"status": "1", "result": []}
             
-        except requests.exceptions.RequestException as e:
-            if attempt < retry_count - 1:
-                print(f"    Network error, retrying... ({e})")
+            # If failed, print error and retry
+            print(f"API Error: {result}")
+            time.sleep(1)
+            
+        except Exception as e:
+            # Network error - wait and retry
+            print(f"Request failed (attempt {attempt + 1}/3): {e}")
+            if attempt < 2:
                 time.sleep(2)
-                continue
-            raise Exception(f"Network error: {e}")
     
-    raise Exception("Max retries exceeded")
+    # All retries failed
+    return {"status": "0", "result": []}
 
 
-def get_block_by_timestamp(
-    api_url: str,
-    api_key: str,
-    chain_id: str,
-    timestamp: int
-) -> int:
+def date_to_timestamp(date_str):
     """
-    Converts Unix timestamp to blockchain block number.
+    Converts date string to Unix timestamp.
     
-    Why needed: Blockchain data is indexed by blocks, not timestamps.
-    To query "all events on Dec 1st", we must convert dates to block numbers.
+    Example: "2025-12-02" → 1733097600
+    """
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    return int(dt.timestamp())
+
+
+def get_block_number(timestamp):
+    """
+    Converts timestamp to blockchain block number.
     
-    Args:
-        api_url: Etherscan-compatible API endpoint
-        api_key: API authentication key
-        chain_id: Chain ID (e.g., "1" = Ethereum, "42161" = Arbitrum)
-        timestamp: Unix timestamp (seconds since epoch)
-    
-    Returns:
-        Block number closest to the timestamp
+    Why needed: Blockchain data is indexed by blocks, not dates.
+    We must convert dates to block numbers to query events.
     """
     params = {
         "module": "block",
@@ -216,385 +110,313 @@ def get_block_by_timestamp(
         "timestamp": timestamp,
         "closest": "before"
     }
-
-    result = make_api_call(api_url, api_key, chain_id, params)
-    block_number = int(result.get("result", "0"))
-
-    return block_number
-
-
-def date_to_timestamp(date_str: str) -> int:
-    """
-    Converts date string to Unix timestamp.
     
-    Args:
-        date_str: Date in format 'YYYY-MM-DD'
-    
-    Returns:
-        Unix timestamp (seconds since 1970-01-01)
-    """
-    dt = datetime.strptime(date_str, "%Y-%m-%d")
-    return int(dt.timestamp())
+    result = api_call(params)
+    return int(result.get("result", 0))
 
 
-def get_logs_page(
-    api_url: str,
-    api_key: str,
-    chain_id: str,
-    contract_address: str,
-    from_block: int,
-    to_block: int,
-    topic0: str,
-    page: int = 1,
-    records_per_page: int = 1000
-) -> dict:
+def get_logs_page(from_block, to_block, topic, page=1):
     """
     Fetches one page of event logs from blockchain.
     
-    What are topics?
-    - Topics are indexed event parameters in Ethereum
-    - topic0 = event signature hash (identifies which event)
+    Parameters:
+    - from_block: Starting block number
+    - to_block: Ending block number
+    - topic: Event topic0 (event signature hash)
+    - page: Page number (1-indexed)
     
-    Args:
-        api_url: Etherscan-compatible API endpoint
-        api_key: API key
-        chain_id: Chain ID
-        contract_address: Smart contract to query
-        from_block: Start block (inclusive)
-        to_block: End block (inclusive)
-        topic0: Topic0 (event signature hash)
-        page: Page number (starts at 1)
-        records_per_page: Max records per page (Etherscan max = 1000)
-    
-    Returns:
-        API response with array of log entries
+    Returns: List of log entries for this page
     """
     params = {
         "module": "logs",
         "action": "getLogs",
-        "address": contract_address,
+        "address": CONTRACT_ADDRESS,
         "fromBlock": from_block,
         "toBlock": to_block,
+        "topic0": topic,
         "page": page,
-        "offset": records_per_page,
-        "topic0": topic0
-    }    
-    result = make_api_call(api_url, api_key, chain_id, params)
-    return result
+        "offset": 1000  # Max 1000 records per page
+    }
+    
+    result = api_call(params)
+    return result.get("result", [])
 
 
-def extract_all_logs(
-    api_url: str,
-    api_key: str,
-    chain_id: str,
-    contract_address: str,
-    from_block: int,
-    to_block: int,
-    topics: dict,
-    records_per_page: int = 1000
-) -> list:
+def extract_all_logs(from_block, to_block, topic, chunk_size=10000):
     """
-    Extracts all logs by handling pagination automatically.
+    Extracts all logs using CHUNKING + pagination.
     
-    Why pagination? APIs limit response size (usually 1000 records).
-    If there are 5000 events, we need 5 requests to get them all.
-    
-    How it works:
-    1. Fetch page 1 → got 1000 records? Fetch page 2
-    2. Fetch page 2 → got 1000 records? Fetch page 3
-    3. Fetch page 3 → got 500 records? Done (last page)
-    
-    Args:
-        api_url: Etherscan-compatible API endpoint
-        api_key: API key
-        chain_id: Chain ID
-        contract_address: Contract address
-        from_block: Start block
-        to_block: End block
-        topics: Topic filters
-        records_per_page: Records per page (max 1000)
-    
-    Returns:
-        Complete list of all log entries
+    Parameters:
+    - from_block: Starting block number
+    - to_block: Ending block number
+    - topic: Event topic0 (event signature hash)
+    - chunk_size: Max blocks per API call (10000 etherscan api limit, reduce if still timing out)
     """
     all_logs = []
-    page = 1
     
-    print(f"Extracting logs from block {from_block} to {to_block}...")
+    # Calculate total range for progress tracking
+    total_blocks = to_block - from_block
+    print(f"        -> Extracting from block {from_block} to {to_block} ({total_blocks} blocks)...")
+    print(f"        -> Using chunk size: {chunk_size} blocks")
     
-    while True:
-        print(f"  Fetching page {page}...")
+    # -------------------------------------------------------------------------
+    # CHUNKING LOOP: Split block range into manageable pieces
+    # -------------------------------------------------------------------------
+    # range(start, end, step) generates: start, start+step, start+2*step, ...
+    # Example: range(0, 86400, 10000) → 0, 10000, 20000, ..., 80000
+    
+    chunk_num = 0
+    for chunk_start in range(from_block, to_block + 1, chunk_size):
+        chunk_num += 1
         
-        try:
-            response = get_logs_page(
-                api_url,
-                api_key,
-                chain_id,
-                contract_address,
-                from_block,
-                to_block,
-                topics.get("topic0", ""),
-                page,
-                records_per_page
-            )
+        # Calculate chunk end: either chunk_start + chunk_size - 1 OR to_block (whichever is smaller)
+        # The -1 ensures no overlap between chunks (chunk1: 0-9999, chunk2: 10000-19999, etc.)
+        # min() ensures we don't exceed the original to_block
+        chunk_end = min(chunk_start + chunk_size - 1, to_block)
+        
+        print(f"        -> Chunk {chunk_num}: blocks {chunk_start} to {chunk_end}...")
+        
+        # ---------------------------------------------------------------------
+        # PAGINATION LOOP: Get all pages within this chunk
+        # ---------------------------------------------------------------------
+        page = 1
+        
+        while True:
+            print(f"           Page {page}...", end=" ")
             
-            logs = response.get("result", [])
+            # Get one page of logs for this chunk
+            logs = get_logs_page(chunk_start, chunk_end, topic, page)
             
-            # Empty page = done
+            # If empty page, this chunk is done
             if not logs:
-                print(f"    No more logs (empty page)")
+                print("No logs")
                 break
             
+            # Add logs to our collection
             all_logs.extend(logs)
-            print(f"    Found {len(logs)} logs")
+            print(f"Got {len(logs)} logs")
             
-            # Partial page = last page
-            if len(logs) < records_per_page:
-                print(f"    Last page reached")
+            # If partial page (< 1000), it's the last page of this chunk
+            if len(logs) < 1000:
                 break
             
+            # Move to next page within this chunk
             page += 1
             
-            # Respect rate limits (5 calls/second for free tier)
-            time.sleep(0.5)
-            
-        except Exception as e:
-            print(f"    Error on page {page}: {e}")
-            break
+            # Rate limit: wait between pages
+            time.sleep(0.2)
+        
+        # Rate limit: wait between chunks to avoid hitting API limits
+        time.sleep(0.25)
     
+    print(f"        -> Total logs extracted: {len(all_logs)}")
     return all_logs
 
 
-# =============================================================================
-# MAIN EXTRACTION FUNCTION (Airflow Task)
-# =============================================================================
-
-def extract_logs_to_file(
-    api_url: str,
-    api_key: str,
-    chain_name: str,
-    start_date: str,
-    end_date: str,
-    output_dir: str,
-    contract_address: Optional[str] = None,
-    topics: Optional[Dict[str, str]] = None,
-    seeds_file: str = None,
-    contracts_file: str = None
-) -> str:
+def append_logs_to_jsonl(logs: list, output_file: str) -> int:
     """
-    Main extraction function - Airflow calls this as a task.
+    Appends logs to a JSONL (JSON Lines) file.
     
-    This function:
-    1. Converts chain name to chain ID using seeds file
-    2. Loads contract address for chain (if not provided)
-    3. Extracts logs from blockchain
-    4. Saves raw data to JSON file
-    5. Returns file path for next task
-    
-    Airflow workflow:
-    Task 1 (Extract): extract_logs_to_file() → saves logs_*.json
-    Task 2 (Transform): decode_events() → loads logs_*.json, saves decoded_*.json
-    Task 3 (Load): load_to_database() → loads decoded_*.json, inserts to DB
-    
-    Args:
-        api_url: Etherscan-compatible API endpoint URL
-        api_key: API authentication key
-        chain_name: Blockchain name (e.g., "Arbitrum", "Ethereum", "Base")
-        start_date: Start date as "YYYY-MM-DD"
-        end_date: End date as "YYYY-MM-DD"
-        output_dir: Directory to save output file (e.g., "data/raw/etherscan_api")
-        contract_address: Optional contract address (auto-loaded from seeds if not provided)
-        topics: Optional topic filters for event filtering
-        seeds_file: Path to chain_ids.json file (defaults to PROJECT_ROOT/data/seeds/chain_ids.json)
-        contracts_file: Path to across_spoke_pools_contracts.json file (defaults to PROJECT_ROOT/data/seeds/across_spoke_pools_contracts.json)
+    Parameters:
+    -----------
+    logs : list
+        List of log dictionaries to append to file
+    output_file : str
+        Path to the .jsonl file (will be created if doesn't exist)
     
     Returns:
-        Path to the saved JSON file (for passing to next Airflow task)
+    --------
+    int: Number of logs written in this call
     """
-    # Set default paths if not provided (allows function to work from any directory)
-    if seeds_file is None:
-        seeds_file = os.path.join(PROJECT_ROOT, "data", "seeds", "chain_ids.json")
-    if contracts_file is None:
-        contracts_file = os.path.join(PROJECT_ROOT, "data", "seeds", "across_spoke_pools_contracts.json")
+    # Open file in append mode ("a")
+    # Each call adds new lines without overwriting existing content
+    with open(output_file, "a", encoding="utf-8") as f:
+        for log in logs:
+            # json.dumps() converts dict to compact JSON string (no indent)
+            # We add newline (\n) after each log to create one-log-per-line format
+            f.write(json.dumps(log) + "\n")
     
-    print("=" * 60)
-    print("Etherscan API Log Extractor")
-    print("=" * 60)
+    return len(logs)
+
+
+def airflow_extract_logs(chain_name: str, start_date: str, end_date: str) -> Dict[str, Any]:
+    """
+    Airflow-compatible extraction function.
     
-    # Step 0: Convert chain name to chain ID and load contract address
-    print(f"\n🔗 Chain: {chain_name}")
-    try:
-        chain_id = get_chain_id_from_name(chain_name, seeds_file)
-        print(f"   Chain ID: {chain_id}")
-    except ValueError as e:
-        print(f"   Error: {e}")
-        raise
+    Parameters:
+    -----------
+    chain_name : str
+        Blockchain name (e.g., "ETHEREUM", "Base", "Arbitrum")
+        Start date in "YYYY-MM-DD" format (Airflow typically passes this via {{ ds }} template) 
     
-    # Load contract address if not provided
-    if not contract_address:
-        try:
-            contract_address = get_contract_address_from_chain(chain_name, contracts_file)
-            print(f"   Contract (auto-loaded): {contract_address}")
-        except ValueError as e:
-            print(f"   Error: {e}")
-            raise
-    else:
-        print(f"   Contract: {contract_address}")
+    end_date : str
+        End date in "YYYY-MM-DD" format (Airflow typically passes this via {{ next_ds }} template)
     
-    # Step 1: Convert dates to timestamps
-    print(f"\n📅 Date range: {start_date} to {end_date}")
-    start_timestamp = date_to_timestamp(start_date)
-    end_timestamp = date_to_timestamp(end_date)
-    print(f"   Start timestamp: {start_timestamp}")
-    print(f"   End timestamp: {end_timestamp}")
+    Returns:
+    --------
+    Dict with extraction metadata (useful for downstream tasks via XCom)
     
-    # Step 2: Find block numbers using API
-    print("\n🔍 Finding block numbers for date range...")
-    try:
-        start_block = get_block_by_timestamp(api_url, api_key, chain_id, start_timestamp)
-        end_block = get_block_by_timestamp(api_url, api_key, chain_id, end_timestamp)
-        print(f"   Start block: {start_block}")
-        print(f"   End block: {end_block}")
-    except Exception as e:
-        print(f"   Error finding blocks: {e}")
-        raise
+    Raises:
+    -------
+    ValueError: If chain_name not found in config
+    Exception: If extraction fails after retries (Airflow will catch and mark task failed)
+    """
     
-    # Step 3: Display topic filters
-    print(f"\n🔎 Topic filters:")
-    if topics:
-        for key, value in topics.items():
-            print(f"   {key}: {value}")
-    else:
-        print("   None (fetching all events)")
+    # -------------------------------------------------------------------------
+    # STEP 1: Load chain-specific configuration
+    # -------------------------------------------------------------------------
+    # Instead of using global CHAIN_ID, CONTRACT_ADDRESS, etc.,
+    # we load fresh config based on the chain_name parameter.
+    # This makes each run independent and reproducible.
     
-    # Step 4: Extract logs with pagination
-    print(f"\n📥 Extracting logs from contract: {contract_address}")
-    print(f"   Chain ID: {chain_id}")
+    chain_params = get_chain_params(chain_name)
     
-    try:
-        logs = extract_all_logs(
-            api_url=api_url,
-            api_key=api_key,
-            chain_id=chain_id,
-            contract_address=contract_address,
-            from_block=start_block,
-            to_block=end_block,
-            topics=topics or {}
-        )
-    except Exception as e:
-        print(f"\n❌ Error extracting logs: {e}")
-        raise
+    # Validate that chain exists in our config
+    if chain_params is None:
+        raise ValueError(f"Chain '{chain_name}' not found in tokens_contracts_per_chain.json")
     
-    # Step 5: Create output directory if needed
-    os.makedirs(output_dir, exist_ok=True)
+    # Declare globals so api_call(), get_logs_page(), etc. can access them
+    # These must match the UPPERCASE names used in those functions
+    global CHAIN_ID, API_KEY, API_URL, CONTRACT_ADDRESS
     
-    # Step 6: Build filename using chain_name (lowercase for consistency)
-    chain_name_lower = chain_name.lower()
-    output_filename = f"logs_{chain_name_lower}_{start_date}_to_{end_date}.json"
-    output_path = os.path.join(output_dir, output_filename)
+    # Extract chain-specific values and assign to global variables
+    CHAIN_ID = chain_params["chain_id"]
+    CONTRACT_ADDRESS = chain_params["spoke_pool_contract"]
+    event_topics = chain_params["topics"]
     
-    # Step 7: Save raw logs to file
-    with open(output_path, "w") as f:
-        json.dump(logs, f, indent=2)
+    # API configuration (these could also be parameters if you want multi-API support)
+    API_URL = "https://api.etherscan.io/v2/api"
+    API_KEY = os.getenv("ETHERSCAN_API_KEY")
     
-    # Step 8: Display summary
-    print(f"\n  Done! Extracted {len(logs)} logs")
-    print(f"   Saved to: {output_path}")
-    print(f"\n   Summary:")
-    print(f"   Total logs: {len(logs)}")
-    print(f"   Block range: {start_block} to {end_block}")
-    print(f"   Total blocks: {end_block - start_block + 1}")
-    if end_block > start_block:
-        print(f"   Logs per block (avg): {len(logs) / (end_block - start_block + 1):.2f}")
+    # Validate API key exists
+    if not API_KEY:
+        raise ValueError("ETHERSCAN_API_KEY environment variable not set")
     
-    # Return file path for next Airflow task
-    # Next task can use this path: ti.xcom_pull(task_ids='extract_logs')
-    return output_path
+    print(f"[Airflow] Starting extraction for {chain_name}")
+    print(f"[Airflow] Date range: {start_date} to {end_date}")
+    print(f"[Airflow] Contract: {CONTRACT_ADDRESS}")
+    
+    # -------------------------------------------------------------------------
+    # STEP 2: Convert dates to block numbers
+    # -------------------------------------------------------------------------
+    # Blockchain data is indexed by blocks, not dates.
+    # We convert dates → timestamps → block numbers.
+    
+    start_ts = date_to_timestamp(start_date)
+    end_ts = date_to_timestamp(end_date)
+    
+    # Note: These internal calls still use globals for now.
+    # For full isolation, you'd pass chain_id/api_key to these functions too.
+    # See "FUTURE IMPROVEMENT" comment below.
+    start_block = get_block_number(start_ts)
+    end_block = get_block_number(end_ts)
+    
+    print(f"[Airflow] Block range: {start_block} to {end_block}")
+    
+    # -------------------------------------------------------------------------
+    # STEP 3: Prepare output file (JSONL format)
+    # -------------------------------------------------------------------------
+    # We use JSONL (JSON Lines) format for memory efficiency:
+    # - Each log is written immediately after extraction
+    # - Memory holds only ONE topic's logs at a time
+    # - File can be appended safely (no need to load existing content)
+    
+    output_file = f"{PROJECT_ROOT}/data/raw/etherscan_api/logs_{str(chain_name).lower()}_{start_date}_to_{end_date}.jsonl"
+    
+    # Clear file if it exists (fresh extraction for this date range)
+    # This prevents duplicate data if re-running the same extraction
+    if os.path.exists(output_file):
+        os.remove(output_file)
+        print(f"[Airflow] Cleared existing file: {output_file}")
+    
+    # -------------------------------------------------------------------------
+    # STEP 4: Extract and save logs PER TOPIC (memory efficient)
+    # -------------------------------------------------------------------------
+    # Instead of accumulating ALL logs in memory, we:
+    # 1. Extract logs for ONE topic
+    # 2. Immediately append to JSONL file
+    # 3. Let Python garbage collect the topic_logs list
+    # 4. Move to next topic
+    #
+    # Memory usage: O(max_topic_size) instead of O(total_all_topics)
+    
+    total_logs = 0  # Counter only, not storing actual logs
+    
+    for topic in event_topics:
+        print(f"[Airflow] Extracting topic: {topic[:20]}...")  # Truncate for readability
+        
+        # Extract logs for this topic (held in memory temporarily until written to file)
+        topic_logs = extract_all_logs(start_block, end_block, topic)
+        
+        # Immediately write to file (no need to store in memory)
+        logs_written = append_logs_to_jsonl(topic_logs, output_file)
+        total_logs += logs_written
+        
+        print(f"[Airflow] Saved {logs_written} logs for this topic → {output_file}")
+        
+    print(f"[Airflow] Total logs extracted and saved: {total_logs}")
+    
+    # -------------------------------------------------------------------------
+    # STEP 5: Return metadata for Airflow XCom
+    # -------------------------------------------------------------------------
+    # XCom (cross-communication) lets downstream tasks access this data.
+    # Example: A "transform" task can read the output_file path from XCom.
+    #
+    # In downstream task:
+    #   file_path = ti.xcom_pull(task_ids="extract_etherscan_logs")["output_file"]
+    
+    result = {
+        "chain_name": chain_name,
+        "chain_id": CHAIN_ID,
+        "start_date": start_date,
+        "end_date": end_date,
+        "start_block": start_block,
+        "end_block": end_block,
+        "total_logs": total_logs,
+        "output_file": output_file,
+        "format": "jsonl",  # Indicates file format for downstream tasks
+        "status": "success"
+    }
+    
+    print(f"[Airflow] Extraction complete!")
+    
+    return result
 
 
 # =============================================================================
-# STANDALONE EXECUTION (for testing without Airflow)
+# MAIN EXECUTION
 # =============================================================================
 
 def main():
     """
-    Standalone execution with multiple topic0 values.
+    CLI entry point - calls the Airflow-compatible function with global config.
     
-    This function runs extractions for three different event types.
-    Each topic0 value represents a different smart contract event.
-    Contract address is automatically loaded based on chain name.
+    This allows you to:
+    - Run directly: python extract_data_etherscan_api_simply.py
+    - Use with Airflow: PythonOperator(python_callable=airflow_extract_logs, ...)
     
-    How it works:
-    1. Loads API key from environment variable (ETHERSCAN_API_KEY)
-    2. Defines base configuration (chain, dates, output directory)
-    3. Loops through three topic0 values
-    4. Extracts and saves logs for each event type separately
-    5. Each extraction creates its own JSON file
+    Both use the SAME core logic, keeping code DRY (Don't Repeat Yourself).
     """
+
+    # -----------------------------------------------------------------------------
+    # User-defined configuration (edit these values to change extraction settings)
+    # -----------------------------------------------------------------------------
+    CHAIN_NAME = "monad"
+    START_DATE = "2025-12-03"
+    END_DATE = "2025-12-04"
+
+    # Simply delegate to the Airflow-compatible function
+    # Pass the global configuration values as parameters
+    result = airflow_extract_logs(
+        chain_name=CHAIN_NAME,
+        start_date=START_DATE,
+        end_date=END_DATE
+    )
     
-    # Base configuration (shared across all three extractions)
-    # Modify these values for your specific use case
-    base_config = {
-        "api_url": "https://api.etherscan.io/v2/api",  # Etherscan API endpoint
-        "api_key": os.getenv("ETHERSCAN_API_KEY"),  # Loaded from environment
-        "chain_name": "base",  # Chain to extract from (Arbitrum, Ethereum, Base, etc.)
-        "start_date": "2025-12-03",  # Start date in YYYY-MM-DD format
-        "end_date": "2025-12-04",    # End date in YYYY-MM-DD format
-        "output_dir": os.path.join(PROJECT_ROOT, "data", "raw", "etherscan_api"),  # Where to save JSON files (absolute path)
-    }
-    
-    # Define your three topic0 values
-    # Each topic0 identifies a different smart contract event type
-    # Replace these with your actual event signature hashes
-    topic0_list = [
-        {
-            "name": "FundsDeposited", # event occurs when a user deposits funds into Across Protocol
-            "topic0": "0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"
-        },
-        {
-            "name": "ExecutedRelayerRefundRoot", # event occurs when a relayer gets a refund from Across Protocol
-            "topic0": "0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e"
-        },
-        {
-            "name": "FilledRelay", # event occurs when a relayer fills a deposit of an user
-            "topic0": "0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208"
-        }
-    ]
-    
-    # Run extraction for each topic0 value sequentially
-    print(f"\n{'='*60}")
-    print(f"STARTING MULTI-TOPIC EXTRACTION")
-    print(f"Chain: {base_config['chain_name']}")
-    print(f"Date Range: {base_config['start_date']} to {base_config['end_date']}")
-    print(f"Total Extractions: {len(topic0_list)}")
-    print(f"{'='*60}")
-    
-    for i, topic_config in enumerate(topic0_list, 1):
-        print(f"\n{'='*60}")
-        print(f"EXTRACTION {i}/{len(topic0_list)}: {topic_config['name']}")
-        print(f"Topic0: {topic_config['topic0']}")
-        print(f"{'='*60}")
-        
-        # Create config for this specific extraction
-        # Each extraction gets its own topic filter
-        config = base_config.copy()
-        config["topics"] = {"topic0": topic_config["topic0"]}
-        
-        try:
-            # Run extraction (automatically handles pagination and saves to file)
-            output_path = extract_logs_to_file(**config)
-            print(f"\n✅ {topic_config['name']} extraction complete!")
-            print(f"   File saved: {output_path}")
-        except Exception as e:
-            print(f"\n❌ {topic_config['name']} extraction failed: {e}")
-            # Continue to next extraction even if one fails
-            continue
-    
-    print(f"\n{'='*60}")
-    print("ALL EXTRACTIONS COMPLETE")
-    print(f"Check output directory: {base_config['output_dir']}")
-    print(f"{'='*60}")
+    # Print the result summary (optional, for CLI feedback)
+    print(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":
     main()
+
