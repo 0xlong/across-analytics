@@ -1,6 +1,7 @@
 import polars as pl
 from pathlib import Path
 import time
+from eth_abi import decode as abi_decode  # For decoding dynamic arrays in event data
 
 # Input and output files
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -39,6 +40,7 @@ def save_to_parquet(df: pl.DataFrame, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(output_path)
     print(f"✓ Saved {len(df):,} rows to: {output_path}")
+
 
 def decode_topics(topic0: pl.Expr) -> pl.Expr:
     """
@@ -265,30 +267,141 @@ def _build_funds_deposited_struct(data_col: pl.Expr) -> pl.Expr:
         _slot_as_address(data_col, 8).alias("funds_deposited_data_exclusive_relayer"),
     ])
 
+def _decode_executed_refund_data(data_hex: str) -> dict | None:
+    """
+    Decode ExecutedRelayerRefundRoot event data including dynamic arrays.
+    
+    This function uses eth_abi.decode() which handles the ABI encoding automatically:
+    - Static types are read directly from their slots
+    - Dynamic arrays (uint256[], address[]) use offset pointers in the head section,
+      with actual array data (length + elements) in the tail section
+    
+    Event signature (non-indexed params in data field):
+    ─────────────────────────────────────────────────────────────────────────────
+    ExecutedRelayerRefundRoot(
+        uint256 amountToReturn,      # Slot 0: static
+        uint256[] refundAmounts,     # Slot 1: OFFSET POINTER → tail section
+        address l2TokenAddress,      # Slot 2: static
+        address[] refundAddresses,   # Slot 3: OFFSET POINTER → tail section  
+        bool deferredRefunds,        # Slot 4: static
+        address caller               # Slot 5: static
+    )
+    ─────────────────────────────────────────────────────────────────────────────
+    
+    Note: chainId, rootBundleId, leafId are INDEXED (in topics, not in data).
+    
+    IMPORTANT: This function is called via map_elements which applies to ALL rows
+    before when/then filtering. Returns None for non-matching event data layouts
+    to prevent crashes when decoding other event types.
+    
+    Args:
+        data_hex: Raw hex string from event data field (e.g., "0x000...abc")
+    
+    Returns:
+        Dictionary with decoded fields, or None if decoding fails (wrong event type)
+    """
+    # ─────────────────────────────────────────────────────────────────────────
+    # Null struct template - returned when decoding fails (wrong event type)
+    # Polars requires a dict with all fields present; None values become nulls
+    # NOTE: deferred_refunds and caller SKIPPED (not needed for capital flow)
+    # ─────────────────────────────────────────────────────────────────────────
+    NULL_STRUCT = {
+        "amount_to_return": None,
+        "l2_token_address": None,
+        "refund_amounts": None,
+        "refund_addresses": None,
+        "refund_count": None,
+        # "deferred_refunds": None,  # SKIPPED: execution flag, not capital
+        # "caller": None,            # SKIPPED: who called, not who receives
+    }
+    
+    try:
+        # ─────────────────────────────────────────────────────────────────────
+        # Step 0: Guard against None input (can happen with skip_nulls=False)
+        # ─────────────────────────────────────────────────────────────────────
+        if data_hex is None:
+            return NULL_STRUCT
+            
+        # ─────────────────────────────────────────────────────────────────────
+        # Step 1: Convert hex string to bytes (remove '0x' prefix)
+        # ─────────────────────────────────────────────────────────────────────
+        data_bytes = bytes.fromhex(data_hex[2:])
+        
+        # ─────────────────────────────────────────────────────────────────────
+        # Step 2: Define ABI types for non-indexed params (in declaration order)
+        # eth_abi handles offset pointers and tail section parsing automatically
+        # ─────────────────────────────────────────────────────────────────────
+        types = [
+            'uint256',    # amountToReturn
+            'uint256[]',  # refundAmounts (dynamic array)
+            'address',    # l2TokenAddress
+            'address[]',  # refundAddresses (dynamic array)
+            'bool',       # deferredRefunds
+            'address'     # caller
+        ]
+        
+        # ─────────────────────────────────────────────────────────────────────
+        # Step 3: Decode all fields in one call
+        # The library returns arrays as Python tuples
+        # ─────────────────────────────────────────────────────────────────────
+        (
+            amount_to_return,
+            refund_amounts,      # Tuple of uint256 values
+            l2_token_address,
+            refund_addresses,    # Tuple of address strings
+            deferred_refunds,
+            caller
+        ) = abi_decode(types, data_bytes)
+        
+        # ─────────────────────────────────────────────────────────────────────
+        # Step 4: Return as dictionary for Polars struct conversion
+        # Arrays are stored as comma-separated strings (Polars-friendly format)
+        # NOTE: deferred_refunds and caller SKIPPED (not needed for capital flow)
+        # ─────────────────────────────────────────────────────────────────────
+        return {
+            "amount_to_return": float(amount_to_return),        # Float64 for large values
+            "l2_token_address": l2_token_address,               # Checksum address string
+            "refund_amounts": ",".join(str(a) for a in refund_amounts),    # "100,200,300"
+            "refund_addresses": ",".join(refund_addresses),                 # "0xAAA,0xBBB"
+            "refund_count": len(refund_amounts),                # Number of refunds in this leaf
+            # "deferred_refunds": deferred_refunds,             # SKIPPED: execution flag
+            # "caller": caller                                  # SKIPPED: who called execute
+        }
+    except Exception:
+        # ─────────────────────────────────────────────────────────────────────
+        # Return null struct for non-ExecutedRelayerRefundRoot events
+        # map_elements applies to ALL rows; the when/then filter happens AFTER
+        # ─────────────────────────────────────────────────────────────────────
+        return NULL_STRUCT
+
+
 def _build_executed_refund_struct(data_col: pl.Expr) -> pl.Expr:
     """
     Build decoded struct for ExecutedRelayerRefundRoot event.
     
-    Slot | Field               | Type
-    ─────┼─────────────────────┼─────────
-     0   | amount_to_return    | uint256
-     1   | chain_id            | uint256
-     2   | refund_amounts_ptr  | (offset pointer - skip)
-     3   | l2_token_address    | address
-     4   | refund_addresses_ptr| (offset pointer - skip)
+    Uses map_elements to apply _decode_executed_refund_data() row-by-row.
+    This is necessary because dynamic arrays require offset-based decoding
+    that cannot be expressed as pure Polars columnar operations.
     
-    Note: Dynamic arrays at slots 2, 4+ require offset-based decoding.
+    Trade-off: Slightly slower than pure Polars expressions, but:
+    - Correct handling of ABI-encoded dynamic arrays
+    - Clean, maintainable code using battle-tested eth_abi library
+    - Returns proper struct that integrates with existing pipeline
     """
-    return pl.struct([
-        # Amount (Float64 handles large token amounts automatically)
-        _slot_as_int(data_col, 0).alias("executed_refund_root_data_amount_to_return"),
-        
-        # Chain ID
-        _slot_as_int(data_col, 1).alias("executed_refund_root_data_chain_id"),
-        
-        # Token address
-        _slot_as_address(data_col, 3).alias("executed_refund_root_data_l2_token_address"),
-    ])
+    # NOTE: deferred_refunds and caller SKIPPED at source (not needed for capital flow)
+    # Since map_elements is a black box to Polars optimizer, we skip early here
+    return data_col.map_elements(
+        _decode_executed_refund_data,
+        return_dtype=pl.Struct([
+            pl.Field("amount_to_return", pl.Float64),
+            pl.Field("l2_token_address", pl.Utf8),
+            pl.Field("refund_amounts", pl.Utf8),        # Comma-separated string
+            pl.Field("refund_addresses", pl.Utf8),      # Comma-separated string
+            pl.Field("refund_count", pl.Int64),         # Count of refunds
+            # pl.Field("deferred_refunds", pl.Boolean), # SKIPPED: execution flag
+            # pl.Field("caller", pl.Utf8),              # SKIPPED: who called execute
+        ])
+    )
 
 # Decode the data field based on the event type
 def decode_data(data_col: pl.Expr, topic0_col: pl.Expr) -> pl.Expr:
@@ -364,69 +477,72 @@ def transform_data() -> pl.DataFrame:
         .unnest("decoded_topics")
         .unnest("decoded_data")
         
-        # STEP 5: Select final columns organized by event type
-        # Each event populates only its section; other sections are NULL
+        # STEP 5: Select final columns for CAPITAL FLOW ANALYSIS
+        # ─────────────────────────────────────────────────────────────────────
+        # SKIPPED columns (commented out below - can re-enable if needed):
+        #   - filled_relay_data_fill_deadline          → timing constraint
+        #   - filled_relay_data_exclusivity_deadline   → exclusive relayer window
+        #   - filled_relay_data_message_hash           → cross-chain message hash
+        #   - topic_root_bundle_id, topic_leaf_id      → merkle tree internals
+        # SKIPPED at source (_decode_executed_refund_data - map_elements can't optimize):
+        #   - deferred_refunds, caller                 → execution mechanics
+        # ─────────────────────────────────────────────────────────────────────
         .select([
             # ═══════════════════════════════════════════════════════════════════
-            # METADATA (common to all events)
+            # CORE IDENTITY (common to all events)
             # ═══════════════════════════════════════════════════════════════════
-            "timestamp_datetime",           # Human-readable timestamp (truncated to minute)
-            #"timestamp_unix",               # Unix timestamp for calculations
-            #"block_number_int",             # Block number as integer
-            "transactionHash",              # Transaction hash for lookups
-            "topic_0",                      # Event signature (keccak256) - use to filter by event type
-            #"gas_price_wei",                # Gas price paid (in wei)
-            #"gas_used",                     # Gas consumed by this log
+            "timestamp_datetime",           # When the event occurred (truncated to minute)
+            "transactionHash",              # Transaction hash for lookups/deduplication
+            "topic_0",                      # Event signature - filter by event type
             
             # ═══════════════════════════════════════════════════════════════════
-            # FILLED_RELAY (FilledRelay V3) - Bridge fill completed on destination
-            # ═══════════════════════════════════════════════════════════════════
-            # --- Topics (indexed parameters) ---
-            "topic_origin_chain_id",        # Chain where deposit originated (indexed)
-            "topic_deposit_id",             # Unique deposit ID (indexed, shared with FUNDS_DEPOSITED)
-            "topic_relayer",                # Address of relayer who filled (indexed)
-            # --- Data (non-indexed parameters) ---
-            "filled_relay_data_input_token",            # Token deposited on origin chain
-            "filled_relay_data_output_token",           # Token received on destination chain
-            "filled_relay_data_input_amount",           # Amount deposited (in input token units)
-            "filled_relay_data_output_amount",          # Amount received (in output token units)
-            "filled_relay_data_repayment_chain_id",     # Chain where relayer gets repaid
-            "filled_relay_data_fill_deadline",          # Unix timestamp deadline for fill
-            "filled_relay_data_exclusivity_deadline",   # Deadline for exclusive relayer
-            "filled_relay_data_exclusive_relayer",      # Address with exclusive fill rights (if any)
-            "filled_relay_data_depositor",              # Original depositor address
-            "filled_relay_data_recipient",              # Final recipient of funds
-            "filled_relay_data_message_hash",           # Hash of cross-chain message (if any)
-            
-            # ═══════════════════════════════════════════════════════════════════
-            # FUNDS_DEPOSITED (FundsDeposited V3) - Bridge deposit on origin chain
+            # FILLED_RELAY - Capital flow: origin → destination (fill side)
             # ═══════════════════════════════════════════════════════════════════
             # --- Topics (indexed) ---
-            "topic_destination_chain_id",   # Target chain for the bridge
-            # topic_deposit_id              # (shared column - see FILLED_RELAY section above)
-            "topic_depositor",              # Address initiating the deposit
+            "topic_origin_chain_id",        # Where capital came FROM
+            "topic_deposit_id",             # Matching key to link deposits ↔ fills
+            "topic_relayer",                # Who provided liquidity (relayer address)
             # --- Data (non-indexed) ---
-            "funds_deposited_data_input_token",         # Token being deposited
+            "filled_relay_data_input_token",            # Token on origin chain
+            "filled_relay_data_output_token",           # Token on destination chain
+            "filled_relay_data_input_amount",           # Amount sent from origin
+            "filled_relay_data_output_amount",          # Amount received on destination
+            "filled_relay_data_repayment_chain_id",     # Where relayer gets reimbursed
+            #"filled_relay_data_fill_deadline",         # SKIPPED: timing constraint for fill
+            #"filled_relay_data_exclusivity_deadline",  # SKIPPED: exclusive relayer window
+            "filled_relay_data_exclusive_relayer",      # Address with exclusive fill rights
+            "filled_relay_data_depositor",              # Who initiated the bridge
+            "filled_relay_data_recipient",              # Who received the funds
+            #"filled_relay_data_message_hash",          # SKIPPED: cross-chain message hash
+            
+            # ═══════════════════════════════════════════════════════════════════
+            # FUNDS_DEPOSITED - Capital flow: user → protocol (deposit side)
+            # ═══════════════════════════════════════════════════════════════════
+            # --- Topics (indexed) ---
+            "topic_destination_chain_id",   # Where capital is going TO
+            # topic_deposit_id              # (shared column - see above)
+            "topic_depositor",              # Who is depositing funds
+            # --- Data (non-indexed) ---
+            "funds_deposited_data_input_token",         # Token deposited
             "funds_deposited_data_output_token",        # Token to receive on destination
-            "funds_deposited_data_input_amount",        # Amount being deposited
-            "funds_deposited_data_output_amount",       # Expected output amount
-            "funds_deposited_data_quote_timestamp",     # Timestamp when quote was obtained
-            "funds_deposited_data_fill_deadline",       # Deadline for fill to occur
-            "funds_deposited_data_exclusivity_deadline",# Deadline for exclusive relayer
-            "funds_deposited_data_recipient",           # Who receives funds on destination
-            "funds_deposited_data_exclusive_relayer",   # Exclusive relayer (if any)
+            "funds_deposited_data_input_amount",        # How much deposited
+            "funds_deposited_data_output_amount",       # How much expected on destination
+            "funds_deposited_data_recipient",           # Final recipient of funds
             
             # ═══════════════════════════════════════════════════════════════════
-            # EXECUTED_RELAYER_REFUND_ROOT - Refund merkle root executed
+            # EXECUTED_RELAYER_REFUND - Capital flow: protocol → relayers (refund)
             # ═══════════════════════════════════════════════════════════════════
             # --- Topics (indexed) ---
-            "topic_chain_id",               # Chain where refund is executed
-            "topic_root_bundle_id",         # ID of the merkle root bundle
-            "topic_leaf_id",                # Leaf index in the merkle tree
+            "topic_chain_id",               # Chain where refund executed
+            #"topic_root_bundle_id",        # SKIPPED: merkle root bundle ID
+            #"topic_leaf_id",               # SKIPPED: merkle tree leaf index
             # --- Data (non-indexed) ---
-            "executed_refund_root_data_amount_to_return",   # Amount being refunded
-            "executed_refund_root_data_chain_id",           # Chain ID (duplicates topic)
-            "executed_refund_root_data_l2_token_address",   # Token address for the refund
+            "amount_to_return",             # Total capital returned in this batch
+            "l2_token_address",             # Token being refunded
+            "refund_amounts",               # Individual refund amounts (CSV string)
+            "refund_addresses",             # Who receives each refund (CSV string)
+            "refund_count",                 # Number of relayers refunded
+            # deferred_refunds, caller → SKIPPED at source (_decode_executed_refund_data)
         ])
         
         # STEP 6: Execute the query plan (all optimizations applied here)
@@ -446,6 +562,10 @@ if __name__ == "__main__":
     # read the data from the output file
     df = pl.read_parquet(OUTPUT_FILE)
 
+
+    # include only executed_refund_root events
+    #df = df.filter(pl.col("topic_0") == EXECUTED_RELAYER_REFUND_ROOT)
+    
     # write the first 5 rows to a csv file
     df.head(5).write_csv("first_5_rows.csv")
 
