@@ -91,7 +91,7 @@ def transform_data() -> pl.DataFrame:
             hex_to_int(pl.col("gasUsed")).alias("gas_used"),
             decode_topics(pl.col("topic_0")), # decode the topics based on the topic0
         ])
-        .unnest("decoded_topics")
+        .unnest("decoded_topics") # unnest the decoded topics into individual columns
         
         # Select final columns
         .select([
@@ -107,6 +107,7 @@ def transform_data() -> pl.DataFrame:
             "root_bundle_id",           # DECODED: int from topic_2 (for EXECUTED_RELAYER_REFUND_ROOT)
             "leaf_id",                  # DECODED: int from topic_3 (for EXECUTED_RELAYER_REFUND_ROOT)
             ])
+
         .collect()
     )
 
@@ -116,7 +117,15 @@ def transform_data() -> pl.DataFrame:
 
 
 if __name__ == "__main__":
+    
+    # transform the data
     transform_data()
+
+    # read the data from the output file
     df = pl.read_parquet(OUTPUT_FILE)
-    df.tail(5).write_csv("first_5_rows.csv")
-    print(df.tail(5))
+
+    # write the first 5 rows to a csv file
+    df.head(5).write_csv("first_5_rows.csv")
+
+    # print the first 5 rows
+    print(df.head(5))
