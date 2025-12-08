@@ -2,16 +2,14 @@ import polars as pl
 from pathlib import Path
 import time
 from eth_abi import decode as abi_decode  # For decoding dynamic arrays in event data
+import os
+import glob
 
-# Input and output files
+#import helper functions
+from transform_utils import get_chain_params
+
+# Project root directory (3 levels up from this script)
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-INPUT_FILE = PROJECT_ROOT / "data/raw/etherscan_api/logs_ethereum_2025-12-03_to_2025-12-04.jsonl"
-OUTPUT_FILE = PROJECT_ROOT / "data/processed/logs_ethereum_transformed.parquet"
-
-# Event signatures (keccak256 hashes) - topic[0] identifies which event was emitted
-FILLED_RELAY = "0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208"
-FUNDS_DEPOSITED = "0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"
-EXECUTED_RELAYER_REFUND_ROOT = "0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e"
 
 
 def hex_to_int(hex_col: pl.Expr) -> pl.Expr:
@@ -21,7 +19,6 @@ def hex_to_int(hex_col: pl.Expr) -> pl.Expr:
     """
     return hex_col.str.replace("0x", "").str.to_integer(base=16, strict=False)
 
-
 def hex_to_address(hex_col: pl.Expr) -> pl.Expr:
     """
     Extract address from 32-byte padded hex topic (last 40 chars).
@@ -29,11 +26,9 @@ def hex_to_address(hex_col: pl.Expr) -> pl.Expr:
     """
     return pl.lit("0x") + hex_col.str.slice(-40)
 
-
 def timestamp_to_datetime(col: pl.Expr) -> pl.Expr:
     """Convert hex timestamp to datetime, truncated to minutes."""
-    return pl.from_epoch(hex_to_int(col), time_unit="s").dt.truncate("1m")
-
+    return pl.from_epoch(hex_to_int(col), time_unit="s")
 
 def save_to_parquet(df: pl.DataFrame, output_path: Path) -> None:
     """Save DataFrame to Parquet format with directory creation."""
@@ -42,7 +37,12 @@ def save_to_parquet(df: pl.DataFrame, output_path: Path) -> None:
     print(f"✓ Saved {len(df):,} rows to: {output_path}")
 
 
-def decode_topics(topic0: pl.Expr) -> pl.Expr:
+def decode_topics(
+    topic0: pl.Expr,
+    filled_relay: str,
+    funds_deposited: str,
+    executed_relayer_refund_root: str
+) -> pl.Expr:
     """
     Decode indexed topics (topic_1, topic_2, topic_3) based on event type.
     
@@ -50,6 +50,12 @@ def decode_topics(topic0: pl.Expr) -> pl.Expr:
     - FILLED_RELAY: origin_chain_id, deposit_id, relayer
     - FUNDS_DEPOSITED: destination_chain_id, deposit_id, depositor
     - EXECUTED_RELAYER_REFUND_ROOT: chain_id, root_bundle_id, leaf_id
+    
+    Args:
+        topic0: Polars expression for topic_0 (event signature)
+        filled_relay: Event signature hash for FilledRelay event
+        funds_deposited: Event signature hash for FundsDeposited event
+        executed_relayer_refund_root: Event signature hash for ExecutedRelayerRefundRoot event
     """
     # FILLED_RELAY topics
     filled_relay_struct = pl.struct([
@@ -73,9 +79,9 @@ def decode_topics(topic0: pl.Expr) -> pl.Expr:
     ])
     
     return (
-        pl.when(topic0 == FILLED_RELAY).then(filled_relay_struct)
-        .when(topic0 == EXECUTED_RELAYER_REFUND_ROOT).then(executed_refund_struct)
-        .when(topic0 == FUNDS_DEPOSITED).then(funds_deposited_struct)
+        pl.when(topic0 == filled_relay).then(filled_relay_struct)
+        .when(topic0 == executed_relayer_refund_root).then(executed_refund_struct)
+        .when(topic0 == funds_deposited).then(funds_deposited_struct)
         .otherwise(None)
         .alias("decoded_topics")
     )
@@ -404,7 +410,13 @@ def _build_executed_refund_struct(data_col: pl.Expr) -> pl.Expr:
     )
 
 # Decode the data field based on the event type
-def decode_data(data_col: pl.Expr, topic0_col: pl.Expr) -> pl.Expr:
+def decode_data(
+    data_col: pl.Expr,
+    topic0_col: pl.Expr,
+    filled_relay: str,
+    funds_deposited: str,
+    executed_relayer_refund_root: str
+) -> pl.Expr:
     """
     Decode event 'data' field based on event signature (topic0).
     
@@ -412,14 +424,20 @@ def decode_data(data_col: pl.Expr, topic0_col: pl.Expr) -> pl.Expr:
     1. Checks topic0 to identify event type
     2. Routes to appropriate struct builder
     3. Returns struct with decoded fields (or NULL for unknown events)
-
+    
+    Args:
+        data_col: Polars expression for the 'data' field
+        topic0_col: Polars expression for topic_0 (event signature)
+        filled_relay: Event signature hash for FilledRelay event
+        funds_deposited: Event signature hash for FundsDeposited event
+        executed_relayer_refund_root: Event signature hash for ExecutedRelayerRefundRoot event
     """
     return (
-        pl.when(topic0_col == FILLED_RELAY)
+        pl.when(topic0_col == filled_relay)
             .then(_build_filled_relay_struct(data_col))
-        .when(topic0_col == FUNDS_DEPOSITED)
+        .when(topic0_col == funds_deposited)
             .then(_build_funds_deposited_struct(data_col))
-        .when(topic0_col == EXECUTED_RELAYER_REFUND_ROOT)
+        .when(topic0_col == executed_relayer_refund_root)
             .then(_build_executed_refund_struct(data_col))
         .otherwise(pl.lit(None))
     ).alias("decoded_data")
@@ -427,23 +445,54 @@ def decode_data(data_col: pl.Expr, topic0_col: pl.Expr) -> pl.Expr:
 
 
 # MAIN TRANSFORMATION PIPELINE
-def transform_data() -> pl.DataFrame:
+def transform_data(
+    chain: str,
+    start_date: str,
+    end_date: str
+) -> pl.DataFrame:
     """
     Transform raw event logs into structured, typed columns.
     
+    This function is designed to be called from Airflow DAGs with date-based parameters.
+    It processes event logs from a specified chain and date range, decoding Ethereum
+    event data into structured columns for capital flow analysis.
+    
+    Args:
+        chain: Blockchain name (e.g., "ethereum", "polygon", "arbitrum")
+        start_date: Start date in YYYY-MM-DD format (e.g., "2025-12-03")
+        end_date: End date in YYYY-MM-DD format (e.g., "2025-12-04")
+    
+    Returns:
+        Polars DataFrame with transformed event log data
+    
     Pipeline steps:
-    1. Scan JSONL file (lazy - no data loaded yet)
-    2. Extract topics list into individual columns
-    3. Decode topics based on event type
-    4. Decode data field based on event type
-    5. Select and rename final columns
-    6. Execute (collect) and save to Parquet
+    1. Construct input/output file paths from parameters
+    2. Load chain-specific event signatures (topics)
+    3. Scan JSONL file (lazy - no data loaded yet)
+    4. Extract topics list into individual columns
+    5. Decode topics based on event type
+    6. Decode data field based on event type
+    7. Select and rename final columns
+    8. Execute (collect) and save to Parquet
     """
     time_start = time.time()
     
+    # Construct file paths from parameters using PROJECT_ROOT constant
+    input_file = PROJECT_ROOT / f"data/raw/etherscan_api/logs_{chain}_{start_date}_to_{end_date}.jsonl"
+    output_file = PROJECT_ROOT / f"data/processed/logs_{chain}_{start_date}_to_{end_date}_processed.parquet"
+    
+    # Load chain-specific event signatures (topic0 hashes)
+    chain_params = get_chain_params(chain)
+    if chain_params is None:
+        raise ValueError(f"Chain '{chain}' not found in configuration file")
+    
+    filled_relay = chain_params["topics"][0]
+    funds_deposited = chain_params["topics"][1]
+    executed_relayer_refund_root = chain_params["topics"][2]
+    
     result = (
         # STEP 1: Create LazyFrame (no data loaded yet - just a query plan)
-        pl.scan_ndjson(INPUT_FILE)
+        pl.scan_ndjson(input_file)
         
         # STEP 2: Extract topics[0..3] into separate columns
         # The topics list always has 4 elements for our events
@@ -466,11 +515,22 @@ def transform_data() -> pl.DataFrame:
             hex_to_int(pl.col("gasPrice")).alias("gas_price_wei"),
             hex_to_int(pl.col("gasUsed")).alias("gas_used"),
             
-            # Decode topics (indexed parameters)
-            decode_topics(pl.col("topic_0")),
+            # Decode topics (indexed parameters) - pass chain-specific event signatures
+            decode_topics(
+                pl.col("topic_0"),
+                filled_relay,
+                funds_deposited,
+                executed_relayer_refund_root
+            ),
             
-            # Decode data field (non-indexed parameters)
-            decode_data(pl.col("data"), pl.col("topic_0")),
+            # Decode data field (non-indexed parameters) - pass chain-specific event signatures
+            decode_data(
+                pl.col("data"),
+                pl.col("topic_0"),
+                filled_relay,
+                funds_deposited,
+                executed_relayer_refund_root
+            ),
         ])
         
         # STEP 4: Unnest decoded structs into individual columns
@@ -550,24 +610,22 @@ def transform_data() -> pl.DataFrame:
     )
 
     print(f"✓ Transformed in {time.time() - time_start:.2f}s")
-    save_to_parquet(result, OUTPUT_FILE)
+    save_to_parquet(result, output_file)
     return result
 
 
 if __name__ == "__main__":
+
+    files = glob.glob(os.path.join(PROJECT_ROOT, "data", "raw", "etherscan_api", "*.jsonl"))
     
-    # transform the data
-    transform_data()
-
-    # read the data from the output file
-    df = pl.read_parquet(OUTPUT_FILE)
-
-
-    # include only executed_refund_root events
-    #df = df.filter(pl.col("topic_0") == EXECUTED_RELAYER_REFUND_ROOT)
-    
-    # write the first 5 rows to a csv file
-    df.head(5).write_csv("first_5_rows.csv")
-
-    # print the first 5 rows
-    print(df.head(5))
+    # define the chain, start_date, and end_date
+    for file in files:
+        print("\n"+file)
+        chain = file.split("logs_")[1].split("_")[0]
+        start_date = file.split("logs_")[1].split("_")[1]
+        end_date = file.split("logs_")[1].split("_")[3].strip(".jsonl")
+        print(f"Chain: {chain}")
+        print(f"Start date: {start_date}")
+        print(f"End date: {end_date}")
+        transform_data(chain, start_date, end_date) 
+        print(f"Transformed {file}")
