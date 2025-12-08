@@ -24,10 +24,12 @@ def get_block_by_timestamp_using_moralis(timestamp: int, chain_name: str) -> int
 
     try:
         response = requests.request("GET", url, headers=headers)
+        #print(response.json())
         return response.json()["block"]
     except Exception as e:
         print(f"Error getting block number by timestamp with Moralis API: {e}")
         return None
+
 
 def save_logs_to_jsonl(logs: list, output_file: str) -> int:
     """
@@ -87,5 +89,5 @@ def get_timestamp_by_block_number_hash_with_infura(block_number_hash: str, chain
         return None
 
 # example usage:
-timestamp_infura = get_timestamp_by_block_number_hash_with_infura("0x89e7378", "optimism")
-print(timestamp_infura)
+#timestamp_infura = get_timestamp_by_block_number_hash_with_infura("0x89e7378", "optimism")
+#print(timestamp_infura)
