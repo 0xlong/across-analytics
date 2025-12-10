@@ -1,6 +1,6 @@
 [{"chain_id": 1, "chain_name": "Ethereum"},
 {"chain_id": 10, "chain_name": "Optimism"},
-{"chain_id": 56, "chain_name": "BNB Chain"},
+{"chain_id": 56, "chain_name": "BSC Chain"},
 {"chain_id": 100, "chain_name": "Gnosis"},
 {"chain_id": 137, "chain_name": "Polygon"},
 {"chain_id": 143, "chain_name": "Monad"},

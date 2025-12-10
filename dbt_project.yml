@@ -1,0 +1,101 @@
+# dbt_project.yml - Main configuration file for Across Analytics dbt project
+# This file tells dbt everything about your project: name, paths, models, and settings
+
+name: 'across_analytics'
+version: '1.0.0'
+
+# Profile configuration - tells dbt which database connection to use
+# This references a profile name in ~/.dbt/profiles.yml
+profile: 'across_analytics'
+
+# Model paths - where dbt looks for your SQL model files
+# dbt will compile and run all .sql files in these directories
+model-paths: ["models"]
+
+# Seed paths - where dbt looks for CSV seed files
+# Seeds are reference data loaded into your warehouse (like contract addresses)
+seed-paths: ["data/seeds"]
+
+# Macro paths - where dbt looks for reusable SQL macros
+# Macros are like functions in SQL (e.g., hex_to_address)
+macro-paths: ["models/staging/macros"]
+
+# Analysis paths - for SQL files that are analyzed but not materialized
+analysis-paths: ["analyses"]
+
+# Test paths - custom test definitions
+test-paths: ["tests"]
+
+# Snapshot paths - for tracking historical changes
+snapshot-paths: ["snapshots"]
+
+# Documentation paths - markdown files for documentation
+docs-paths: ["docs"]
+
+# Target path - where dbt writes compiled SQL and logs
+target-path: "target"
+
+# Clean target path - removes compiled files before running
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Model configurations - default settings for all models
+# These can be overridden in individual model files or subdirectories
+models:
+  across_analytics:
+    # Staging layer configuration
+    # Staging models clean and standardize raw data from bronze layer
+    staging:
+      # Materialized as views by default - fast, no storage cost, always fresh
+      # Views are virtual tables that run the SQL query each time they're accessed
+      materialized: view
+      
+      # Apply these settings to all staging subdirectories (chains)
+      # Each chain folder (ethereum, arbitrum, etc.) inherits these settings
+      "+enabled": true
+      
+      # Macros folder - contains reusable SQL functions
+      # Not a model folder, so we exclude it from model compilation
+      macros:
+        "+enabled": false
+    
+    # Intermediate layer configuration (if you add this later)
+    # Intermediate models combine staging models for business logic
+    intermediate:
+      materialized: view
+      "+enabled": true
+    
+    # Marts layer configuration (if you add this later)
+    # Marts are final business-ready tables for analytics
+    marts:
+      # Materialized as tables - stored data, faster queries, can be incremental
+      materialized: table
+      "+enabled": true
+
+# Variables - reusable values you can reference in models
+# Use {{ var('variable_name') }} in your SQL files
+vars:
+  # List of supported chains - makes it easy to add/remove chains
+  supported_chains:
+    - arbitrum
+    - base
+    - ethereum
+    - hyperevm
+    - linea
+    - monad
+    - polygon
+    - unichain
+    - worldchain
+  
+  # Database schema configuration
+  # Schema is like a namespace in your database (e.g., staging, marts)
+  default_schema: "across_analytics"
+  
+  # Project metadata
+  project_name: "Across Analytics"
+  project_description: "Analytics for Across Protocol bridge transactions"
+
+# Disable specific dbt features if not needed
+# Keep these enabled unless you have a specific reason to disable
+require-dbt-version: ">=1.0.0"

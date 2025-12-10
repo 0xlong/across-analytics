@@ -196,7 +196,6 @@ INFURA_API_KEY = os.getenv("INFURA_API_KEY")
 # chains available for infura api
 chains_available_for_infura = ["base", "optimism", "polygon", "bsc", "zksync", "linea", "zora", "scroll", "blast", "mode", "redstone", "unichain", "worldchain", "mona"]
 
-chain_name = "0x144"
 # Infura endpoint for Arbitrum mainnet
 INFURA_URL = f"https://{chain_name}-mainnet.infura.io/v3/{INFURA_API_KEY}"
 

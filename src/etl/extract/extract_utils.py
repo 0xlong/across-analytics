@@ -88,6 +88,7 @@ def get_timestamp_by_block_number_hash_with_infura(block_number_hash: str, chain
         print(f"Error getting timestamp by block number hash with infura api: {e}")
         return None
 
+
 # example usage:
 #timestamp_infura = get_timestamp_by_block_number_hash_with_infura("0x89e7378", "optimism")
 #print(timestamp_infura)

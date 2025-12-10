@@ -1,6 +1,0 @@
-data extraction:
-+ tested bigquery - expensive
-+ tested infura - good, 3000000credits day limit, which is enough, also get blocknumber high latency api response
-+ tested etherscan api - best for the task, 100m logs can be extracted in one day, more than enough, faster api response than infura - winner
-
- + taking a "Transform then Load" approach, which is actually smart for blockchain data since hex decoding is easier in Python than SQL

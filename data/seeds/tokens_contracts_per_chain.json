@@ -1,6 +1,8 @@
-[
-    "Ethereum": {
+{
+    "ethereum": {
         "chain_id": 1,
+        "spoke_pool_contract": "0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5",
+        "topics": ["0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208","0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e","0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"],
         "tokens": {
             "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
             "USDT": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
@@ -10,19 +12,22 @@
             "BAL": "0x040d1EdC9569d4Bab2D15287Dc5A4F10F56a56B8"
         }
     },
-    "Optimism": {
+    "optimism": {
         "chain_id": 10,
+        "spoke_pool_contract": "0x6f26Bf09B1C792e3228e5467807a900A503c0281",
+        "topics": ["0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208","0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e","0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"],
         "tokens": {
             "USDC": "0x7F5c764cBc14f9669B88837ca1490cCa17c31607",
             "USDT": "0x94b008aA29c7DeB1dfcDA8fBC07aA576d77765fC",
             "WETH": "0x4200000000000000000000000000000000000006",
             "WBTC": "0x68f180fcCe6836688e9084f035309E29Bf0A2095",
-            "DAI": "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1",
-            "BAL": "ADDRESS_REQUIRED_FOR_Optimism_BAL"
+            "DAI": "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1"
         }
     },
-    "BNB Chain": {
+    "bsc": {
         "chain_id": 56,
+        "spoke_pool_contract": "0x4e8E101924eDE233C13e2D8622DC8aED2872d505",
+        "topics": ["0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208","0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e","0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"],
         "tokens": {
             "USDC": "0x8ac76a51cc950d9822d68b83fe1adeeef92a9b23",
             "USDT": "0x55d398326f99059ff775485246cd36ed9bc6d96b",
@@ -32,8 +37,12 @@
             "BAL": "ADDRESS_REQUIRED_FOR_BNB Chain_BAL"
         }
     },
-    "Polygon": {
+    "polygon": {
         "chain_id": 137,
+        "spoke_pool_contract": "0x9295ee1d8c5b022be115a2ad3c30c72e34e7f096",
+        "topics": ["0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208",
+                   "0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e",
+                   "0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"],
         "tokens": {
             "USDC": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
             "USDT": "0xc2132D05D31c425EBe13cfEaC42dAbC255b6aDF8",
@@ -43,19 +52,23 @@
             "BAL": "ADDRESS_REQUIRED_FOR_Polygon_BAL"
         }
     },
-    "Monad": {
+    "monad": {
         "chain_id": 143,
+        "spoke_pool_contract": "0xd2ecb3afe598b746F8123CaE365a598DA831A449",
+        "topics": ["0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208","0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e","0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"],
         "tokens": {
-            "USDC": "ADDRESS_REQUIRED_FOR_Monad_USDC",
-            "USDT": "ADDRESS_REQUIRED_FOR_Monad_USDT",
-            "WETH": "ADDRESS_REQUIRED_FOR_Monad_WETH",
-            "WBTC": "ADDRESS_REQUIRED_FOR_Monad_WBTC",
+            "USDC": "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
+            "USDT": "0xe7cd86e13AC4309349F30B3435a9d337750fC82D",
+            "WETH": "0xEE8c0E9f1BFFb4Eb878d8f15f368A02a35481242",
+            "WBTC": "0x0555E30da8f98308EdB960aa94C0Db47230d2B9c",
             "DAI": "ADDRESS_REQUIRED_FOR_Monad_DAI",
             "BAL": "ADDRESS_REQUIRED_FOR_Monad_BAL"
         }
     },
-    "zkSync Era": {
+    "zksync": {
         "chain_id": 324,
+        "spoke_pool_contract": "0xE0B015E54d54fc84a6cB9B666099c46adE9335FF",
+        "topics": ["0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208","0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e","0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"],
         "tokens": {
             "USDC": "0x3355df6d4c9c3035724ac0566ce14f248eec4cce",
             "USDT": "0x493257fd37be1e65a6d45b1dfc51f044990c2a23",
@@ -65,8 +78,10 @@
             "BAL": "ADDRESS_REQUIRED_FOR_zkSync Era_BAL"
         }
     },
-    "Worldchain": {
+    "worldchain": {
         "chain_id": 480,
+        "spoke_pool_contract": "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
+        "topics": ["0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208","0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e","0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"],
         "tokens": {
             "USDC": "ADDRESS_REQUIRED_FOR_Worldchain_USDC",
             "USDT": "ADDRESS_REQUIRED_FOR_Worldchain_USDT",
@@ -76,8 +91,10 @@
             "BAL": "ADDRESS_REQUIRED_FOR_Worldchain_BAL"
         }
     },
-    "HypepEVM": {
+    "hyperevm": {
         "chain_id": 999,
+        "spoke_pool_contract": "0x35E63eA3eb0fb7A3bc543C71FB66412e1F6B0E04",
+        "topics": ["0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208","0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e","0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"],
         "tokens": {
             "USDC": "ADDRESS_REQUIRED_FOR_HypepEVM_USDC",
             "USDT": "ADDRESS_REQUIRED_FOR_HypepEVM_USDT",
@@ -87,19 +104,10 @@
             "BAL": "ADDRESS_REQUIRED_FOR_HypepEVM_BAL"
         }
     },
-    "Mantle": {
-        "chain_id": 5000,
-        "tokens": {
-            "USDC": "ADDRESS_REQUIRED_FOR_Mantle_USDC",
-            "USDT": "ADDRESS_REQUIRED_FOR_Mantle_USDT",
-            "WETH": "ADDRESS_REQUIRED_FOR_Mantle_WETH",
-            "WBTC": "ADDRESS_REQUIRED_FOR_Mantle_WBTC",
-            "DAI": "ADDRESS_REQUIRED_FOR_Mantle_DAI",
-            "BAL": "ADDRESS_REQUIRED_FOR_Mantle_BAL"
-        }
-    },
-    "Zora": {
+    "zora": {
         "chain_id": 7777777,
+        "spoke_pool_contract": "0x13fDac9F9b4777705db45291bbFF3c972c6d1d97",
+        "topics": ["0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208","0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e","0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"],
         "tokens": {
             "USDC": "ADDRESS_REQUIRED_FOR_Zora_USDC",
             "USDT": "ADDRESS_REQUIRED_FOR_Zora_USDT",
@@ -109,8 +117,10 @@
             "BAL": "ADDRESS_REQUIRED_FOR_Zora_BAL"
         }
     },
-    "Base": {
+    "base": {
         "chain_id": 8453,
+        "spoke_pool_contract": "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
+        "topics": ["0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208","0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e","0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"],
         "tokens": {
             "USDC": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02963",
             "USDT": "0xd9aAEc86B65D86f4AaEBC702DaE205E521d51Ea4",
@@ -120,8 +130,10 @@
             "BAL": "ADDRESS_REQUIRED_FOR_Base_BAL"
         }
     },
-    "Arbitrum": {
+    "arbitrum": {
         "chain_id": 42161,
+        "spoke_pool_contract": "0xe35e9842fceaca96570b734083f4a58e8f7c5f2a",
+        "topics": ["0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208","0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e","0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"],
         "tokens": {
             "USDC": "0xaf88d065aC88dCc5619a6eeFdD463aAbdE3eE2c3",
             "USDT": "0xFd086bC7cd5C57c5D079c67ceEfdfE64eeDc4fA6",
@@ -131,8 +143,10 @@
             "BAL": "ADDRESS_REQUIRED_FOR_Arbitrum_BAL"
         }
     },
-    "Avalanche": {
+    "avalanche": {
         "chain_id": 43114,
+        "spoke_pool_contract": null,
+        "topics": ["0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208","0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e","0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"],
         "tokens": {
             "USDC": "0xB97EF9e87341065eE2d3cEEdfEAB5917409eA70B",
             "USDT": "0x9702230a8ea53601fcd2dc00fccc55e427d24ab4",
@@ -142,8 +156,10 @@
             "BAL": "ADDRESS_REQUIRED_FOR_Avalanche_BAL"
         }
     },
-    "Linea": {
+    "linea": {
         "chain_id": 59144,
+        "spoke_pool_contract": "0x7E63A5f1a8F0B4d0934B2f2327DAED3F6bb2ee75",
+        "topics": ["0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208","0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e","0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"],
         "tokens": {
             "USDC": "0x176211869cA2b568f2A7D4EE941E07aA25fee00b",
             "USDT": "0xa219439258ca9ce2dcf52a0d7be90c79e745643b",
@@ -153,8 +169,10 @@
             "BAL": "ADDRESS_REQUIRED_FOR_Linea_BAL"
         }
     },
-    "Unichain": {
+    "unichain": {
         "chain_id": 130,
+        "spoke_pool_contract": "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
+        "topics": ["0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208","0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e","0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"],
         "tokens": {
             "USDC": "ADDRESS_REQUIRED_FOR_Unichain_USDC",
             "USDT": "ADDRESS_REQUIRED_FOR_Unichain_USDT",
@@ -163,5 +181,20 @@
             "DAI": "ADDRESS_REQUIRED_FOR_Unichain_DAI",
             "BAL": "ADDRESS_REQUIRED_FOR_Unichain_BAL"
         }
+    },
+    "scroll": {
+        "chain_id": null,
+        "spoke_pool_contract": "0x3bad7ad0728f9917d1bf08af5782dcbd516cdd96",
+        "tokens": {}
+    },
+    "redstone": {
+        "chain_id": null,
+        "spoke_pool_contract": "0x13fDac9F9b4777705db45291bbFF3c972c6d1d97",
+        "tokens": {}
+    },
+    "plasma": {
+        "chain_id": null,
+        "spoke_pool_contract": "0x50039fAEfebef707cFD94D6d462fE6D10B39207a",
+        "tokens": {}
     }
-]
+}

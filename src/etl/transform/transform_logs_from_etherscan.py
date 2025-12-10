@@ -7,6 +7,7 @@ import glob
 
 #import helper functions
 from transform_utils import get_chain_params
+from validate_parquet import validate_schema, validate_data_quality, EXPECTED_SCHEMA
 
 # Project root directory (3 levels up from this script)
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -610,22 +611,44 @@ def transform_data(
     )
 
     print(f"✓ Transformed in {time.time() - time_start:.2f}s")
+    
+    # Validate data before saving (fail fast if there are issues)
+    print("\n🔍 Validating transformed data...")
+    schema_valid, schema_errors = validate_schema(result, EXPECTED_SCHEMA)
+    if not schema_valid:
+        print("❌ Schema validation failed:")
+        for error in schema_errors:
+            print(f"   {error}")
+        raise ValueError("Data validation failed: schema mismatch")
+    
+    quality_valid, quality_errors = validate_data_quality(result)
+    if not quality_valid:
+        print("❌ Data quality validation failed:")
+        for error in quality_errors:
+            print(f"   {error}")
+        raise ValueError("Data validation failed: data quality issues")
+    
+    print("✓ Validation passed")
     save_to_parquet(result, output_file)
     return result
 
 
 if __name__ == "__main__":
 
+    # list all the files to be processed from the data/raw/etherscan_api directory
     files = glob.glob(os.path.join(PROJECT_ROOT, "data", "raw", "etherscan_api", "*.jsonl"))
     
     # define the chain, start_date, and end_date
     for file in files:
+
+        # print file name to be processed
         print("\n"+file)
+
+        # get chain name, start date, and end date from file name
         chain = file.split("logs_")[1].split("_")[0]
         start_date = file.split("logs_")[1].split("_")[1]
         end_date = file.split("logs_")[1].split("_")[3].strip(".jsonl")
-        print(f"Chain: {chain}")
-        print(f"Start date: {start_date}")
-        print(f"End date: {end_date}")
+        print(f"Chain: {chain} \nStart date: {start_date} \nEnd date: {end_date}")
+
+        # transform data
         transform_data(chain, start_date, end_date) 
-        print(f"Transformed {file}")

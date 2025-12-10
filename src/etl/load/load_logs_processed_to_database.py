@@ -94,10 +94,8 @@ def create_raw_table(conn, table_name: str="across_bridge_logs_raw") -> None:
 
 def load_parquet_to_raw_copy(conn, parquet_path: str, table_name: str = "across_bridge_logs_raw") -> int:
     """
-    COPY-based file loader: stream Parquet -> CSV -> Postgres COPY STDIN.
-
+    COPY-based file loader: stream Parquet -> CSV -> Postgres COPY STDIN
     """
-
     # read parquet file into polars dataframe
     df = pl.read_parquet(parquet_path)
     if df.is_empty():
@@ -246,7 +244,7 @@ def load_all_parquet_files_to_raw(
     total_inserted = 0
     try:
         create_raw_table(conn, table_name)
-        print(f"{table_name} ensured")
+        print(f"Table: {table_name} created")
 
         for parquet_file in parquet_files:
             status = check_table_loaded(
