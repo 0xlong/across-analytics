@@ -40,7 +40,7 @@ def get_db_connection(
     return conn
 
 
-def create_raw_table(conn, table_name: str="across_bridge_logs_raw") -> None:
+def create_raw_table(conn, table_name: str) -> None:
     """
     Create the raw (bronze) landing table.
     """
@@ -92,7 +92,7 @@ def create_raw_table(conn, table_name: str="across_bridge_logs_raw") -> None:
     return table_name
 
 
-def load_parquet_to_raw_copy(conn, parquet_path: str, table_name: str = "across_bridge_logs_raw") -> int:
+def load_parquet_to_raw_copy(conn, parquet_path: str, table_name: str) -> int:
     """
     COPY-based file loader: stream Parquet -> CSV -> Postgres COPY STDIN
     """
@@ -169,7 +169,7 @@ def load_parquet_to_raw_copy(conn, parquet_path: str, table_name: str = "across_
     return inserted
 
 
-def check_table_loaded(conn, table_name: str = "across_bridge_logs_raw", source_file: Optional[str] = None) -> dict:
+def check_table_loaded(conn, table_name: str, source_file: Optional[str] = None) -> dict:
     """
     Check if table was loaded and return status information.
     
@@ -221,9 +221,8 @@ def check_table_loaded(conn, table_name: str = "across_bridge_logs_raw", source_
 
 
 
-def load_all_parquet_files_to_raw(
+def load_all_parquet_files_to_raw_tables(
     processed_dir: Optional[Path] = None,
-    table_name: str = "across_bridge_logs_raw",
 ) -> int:
     """
     Airflow-friendly wrapper to load all Parquet files in a directory into raw.
@@ -235,37 +234,61 @@ def load_all_parquet_files_to_raw(
     if processed_dir is None:
         processed_dir = PROJECT_ROOT / "data/processed"
 
-    parquet_files = list(Path(processed_dir).glob("*.parquet"))
+    # Collect parquet files once; deterministic ordering helps reproducibility.
+    parquet_files = sorted(Path(processed_dir).glob("*.parquet"))
     if not parquet_files:
         print(f"No parquet files found in {processed_dir}")
         return 0
 
+    # Open a single DB connection for the entire batch; close at the end.
     conn = get_db_connection()
+
+    # load all parquet files to raw tables
     total_inserted = 0
     try:
-        create_raw_table(conn, table_name)
-        print(f"Table: {table_name} created")
-
         for parquet_file in parquet_files:
-            status = check_table_loaded(
-                conn,
-                table_name,
-                source_file=os.path.basename(parquet_file),
-            )
-            print(f"Table status for {parquet_file.name}: {status}")
 
-            if not status["file_loaded"]:
+            # Table name pattern: raw_<chain>_logs_processed (schema "raw" added in SQL)
+            # Example filename: logs_arbitrum_2023.parquet -> table raw.raw_arbitrum_logs_processed
+            chain_segment = os.path.basename(parquet_file).split("_")[1]
+            table_name = f"{chain_segment}_logs_processed"
+
+            # Ensure the target table exists before loading.
+            try:
+                create_raw_table(conn, table_name)
+                print(f"Table raw.{table_name} ready for {parquet_file.name}")
+            except Exception as e:
+                conn.rollback()  # keep connection usable for other files
+                print(f"Error preparing table {table_name} for {parquet_file.name}: {e}")
+                continue
+
+            # Skip already ingested files using the source_file guardrail.
+            try:
+                status = check_table_loaded(
+                    conn,
+                    table_name,
+                    source_file=os.path.basename(parquet_file),
+                )
+                print(f"Table status for {parquet_file.name}: {status}")
+
+                if status.get("file_loaded"):
+                    print(f"File {parquet_file.name} already loaded into raw.{table_name}, skipping.")
+                    continue
+
                 inserted = load_parquet_to_raw_copy(conn, parquet_file, table_name)
-                print(f"Loaded {inserted} rows from {parquet_file} into {table_name}")
+                print(f"Loaded {inserted} rows from {parquet_file} into raw.{table_name}")
                 total_inserted += inserted
-            else:
-                print(f"File {parquet_file.name} already loaded, skipping...")
+                
+            except Exception as e:
+                # Roll back this file’s work so the next file can proceed cleanly.
+                conn.rollback()
+                print(f"Error loading {parquet_file.name} into raw.{table_name}: {e}")
 
-        print(f"Total rows loaded: {total_inserted}")
+        print(f"Total rows loaded across all tables: {total_inserted}")
         return total_inserted
     finally:
         conn.close()
 
 
 if __name__ == "__main__":
-    load_all_parquet_files_to_raw()
+    load_all_parquet_files_to_raw_tables()
