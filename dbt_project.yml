@@ -96,6 +96,4 @@ vars:
   project_name: "Across Analytics"
   project_description: "Analytics for Across Protocol bridge transactions"
 
-# Disable specific dbt features if not needed
-# Keep these enabled unless you have a specific reason to disable
 require-dbt-version: ">=1.0.0"

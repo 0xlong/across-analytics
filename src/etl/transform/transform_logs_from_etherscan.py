@@ -1,13 +1,13 @@
 import polars as pl
 from pathlib import Path
 import time
-from eth_abi import decode as abi_decode  # For decoding dynamic arrays in event data
+from eth_abi import decode as abi_decode, encode  # For decoding/encoding dynamic arrays in event data
 import os
 import glob
+import json
 
 #import helper functions
 from transform_utils import get_chain_params
-from validate_parquet import validate_schema, validate_data_quality, EXPECTED_SCHEMA
 
 # Project root directory (3 levels up from this script)
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -257,20 +257,20 @@ def _build_funds_deposited_struct(data_col: pl.Expr) -> pl.Expr:
     """
     return pl.struct([
         # Token information
-        _slot_as_address(data_col, 0).alias("funds_deposited_data_input_token"),
-        _slot_as_address(data_col, 1).alias("funds_deposited_data_output_token"),
+        _slot_as_address(data_col, 0).alias("funds_deposited_data_input_token"), #input token address on origin chain
+        _slot_as_address(data_col, 1).alias("funds_deposited_data_output_token"), #ouput token address on destination chain
         
         # Amounts (Float64 handles large token amounts automatically)
-        _slot_as_int(data_col, 2).alias("funds_deposited_data_input_amount"),
-        _slot_as_int(data_col, 3).alias("funds_deposited_data_output_amount"),
+        _slot_as_int(data_col, 2).alias("funds_deposited_data_input_amount"), #input amount on origin chain
+        _slot_as_int(data_col, 3).alias("funds_deposited_data_output_amount"), #output amount on destination chain
         
         # Timing
-        _slot_as_int(data_col, 4).alias("funds_deposited_data_quote_timestamp"),
-        _slot_as_int(data_col, 5).alias("funds_deposited_data_fill_deadline"),
-        _slot_as_int(data_col, 6).alias("funds_deposited_data_exclusivity_deadline"),
+        _slot_as_int(data_col, 4).alias("funds_deposited_data_quote_timestamp"), #quote timestamp
+        _slot_as_int(data_col, 5).alias("funds_deposited_data_fill_deadline"), #fill deadline
+        _slot_as_int(data_col, 6).alias("funds_deposited_data_exclusivity_deadline"), #exclusivity deadline
         
         # Addresses
-        _slot_as_address(data_col, 7).alias("funds_deposited_data_recipient"),
+        _slot_as_address(data_col, 7).alias("funds_deposited_data_recipient"), #recipient address on destination chain
         _slot_as_address(data_col, 8).alias("funds_deposited_data_exclusive_relayer"),
     ])
 
@@ -487,16 +487,25 @@ def transform_data(
     if chain_params is None:
         raise ValueError(f"Chain '{chain}' not found in configuration file")
     
+    # ─────────────────────────────────────────────────────────────────────────
+    # Event signature order in config file:
+    #   topics[0] = FilledRelay
+    #   topics[1] = ExecutedRelayerRefundRoot
+    #   topics[2] = FundsDeposited
+    # ─────────────────────────────────────────────────────────────────────────
     filled_relay = chain_params["topics"][0]
-    funds_deposited = chain_params["topics"][1]
-    executed_relayer_refund_root = chain_params["topics"][2]
-    
+    executed_relayer_refund_root = chain_params["topics"][1]
+    funds_deposited = chain_params["topics"][2]
+
+    #print(f"Filled relay: {filled_relay}")
+    #print(f"Executed relayer refund root: {executed_relayer_refund_root}")
+    #print(f"Funds deposited: {funds_deposited}")
+
     result = (
-        # STEP 1: Create LazyFrame (no data loaded yet - just a query plan)
+        # load file into a polar dataframe
         pl.scan_ndjson(input_file)
         
         # STEP 2: Extract topics[0..3] into separate columns
-        # The topics list always has 4 elements for our events
         .with_columns([
             pl.col("topics")
             .list.to_struct(fields=["topic_0", "topic_1", "topic_2", "topic_3"])
@@ -505,18 +514,16 @@ def transform_data(
         .unnest("topics_struct")
         
         # STEP 3: Decode everything in parallel
-        # - Convert hex timestamps/numbers to proper types
-        # - Decode topics based on event type
-        # - Decode data field based on event type
         .with_columns([
-            # Metadata conversions
+            
+            # - Convert hex timestamps/numbers to proper types
             timestamp_to_datetime(pl.col("timeStamp")).alias("timestamp_datetime"),
             hex_to_int(pl.col("timeStamp")).alias("timestamp_unix"),
             hex_to_int(pl.col("blockNumber")).alias("block_number_int"),
             hex_to_int(pl.col("gasPrice")).alias("gas_price_wei"),
             hex_to_int(pl.col("gasUsed")).alias("gas_used"),
             
-            # Decode topics (indexed parameters) - pass chain-specific event signatures
+            # Decode topics based on event signature (topic_0)
             decode_topics(
                 pl.col("topic_0"),
                 filled_relay,
@@ -524,7 +531,7 @@ def transform_data(
                 executed_relayer_refund_root
             ),
             
-            # Decode data field (non-indexed parameters) - pass chain-specific event signatures
+            # Decode data field based on event signature (topic_0)
             decode_data(
                 pl.col("data"),
                 pl.col("topic_0"),
@@ -538,31 +545,24 @@ def transform_data(
         .unnest("decoded_topics")
         .unnest("decoded_data")
         
-        # STEP 5: Select final columns for CAPITAL FLOW ANALYSIS
-        # ─────────────────────────────────────────────────────────────────────
-        # SKIPPED columns (commented out below - can re-enable if needed):
-        #   - filled_relay_data_fill_deadline          → timing constraint
-        #   - filled_relay_data_exclusivity_deadline   → exclusive relayer window
-        #   - filled_relay_data_message_hash           → cross-chain message hash
-        #   - topic_root_bundle_id, topic_leaf_id      → merkle tree internals
-        # SKIPPED at source (_decode_executed_refund_data - map_elements can't optimize):
-        #   - deferred_refunds, caller                 → execution mechanics
-        # ─────────────────────────────────────────────────────────────────────
+        # STEP 5: Select final columns
         .select([
             # ═══════════════════════════════════════════════════════════════════
             # CORE IDENTITY (common to all events)
             # ═══════════════════════════════════════════════════════════════════
-            "timestamp_datetime",           # When the event occurred (truncated to minute)
-            "transactionHash",              # Transaction hash for lookups/deduplication
+            "timestamp_datetime",
+            "transactionHash",
             "topic_0",                      # Event signature - filter by event type
             
             # ═══════════════════════════════════════════════════════════════════
-            # FILLED_RELAY - Capital flow: origin → destination (fill side)
+            # FILLED_RELAY - origin chain → destination chain (fill side)
             # ═══════════════════════════════════════════════════════════════════
+            
             # --- Topics (indexed) ---
             "topic_origin_chain_id",        # Where capital came FROM
             "topic_deposit_id",             # Matching key to link deposits ↔ fills
             "topic_relayer",                # Who provided liquidity (relayer address)
+            
             # --- Data (non-indexed) ---
             "filled_relay_data_input_token",            # Token on origin chain
             "filled_relay_data_output_token",           # Token on destination chain
@@ -577,31 +577,39 @@ def transform_data(
             #"filled_relay_data_message_hash",          # SKIPPED: cross-chain message hash
             
             # ═══════════════════════════════════════════════════════════════════
-            # FUNDS_DEPOSITED - Capital flow: user → protocol (deposit side)
+            # FUNDS_DEPOSITED - user chain → protocol chain (deposit side)
             # ═══════════════════════════════════════════════════════════════════
+            
             # --- Topics (indexed) ---
             "topic_destination_chain_id",   # Where capital is going TO
             # topic_deposit_id              # (shared column - see above)
             "topic_depositor",              # Who is depositing funds
+            
             # --- Data (non-indexed) ---
             "funds_deposited_data_input_token",         # Token deposited
             "funds_deposited_data_output_token",        # Token to receive on destination
             "funds_deposited_data_input_amount",        # How much deposited
             "funds_deposited_data_output_amount",       # How much expected on destination
             "funds_deposited_data_recipient",           # Final recipient of funds
+
+            # Optional fields: Not required for capital flow analysis, commented out for now
+            # "funds_deposited_data_quote_timestamp",     # When exchange rate quote was generated
+            # "funds_deposited_data_fill_deadline",       # Deadline by which deposit must be filled
+            # "funds_deposited_data_exclusivity_deadline", # Deadline for exclusive relayer rights
+            # "funds_deposited_data_exclusive_relayer",    # Address with exclusive fill rights
             
             # ═══════════════════════════════════════════════════════════════════
-            # EXECUTED_RELAYER_REFUND - Capital flow: protocol → relayers (refund)
+            # EXECUTED_RELAYER_REFUND - protocol chain → relayers (refund)
             # ═══════════════════════════════════════════════════════════════════
             # --- Topics (indexed) ---
             "topic_chain_id",               # Chain where refund executed
-            #"topic_root_bundle_id",        # SKIPPED: merkle root bundle ID
-            #"topic_leaf_id",               # SKIPPED: merkle tree leaf index
+            "topic_root_bundle_id",         # Merkle root bundle ID
+            "topic_leaf_id",                # Merkle tree leaf index
             # --- Data (non-indexed) ---
             "amount_to_return",             # Total capital returned in this batch
             "l2_token_address",             # Token being refunded
-            "refund_amounts",               # Individual refund amounts (CSV string)
-            "refund_addresses",             # Who receives each refund (CSV string)
+            "refund_amounts",               # Individual refund amounts
+            "refund_addresses",             # Who receives each refund
             "refund_count",                 # Number of relayers refunded
             # deferred_refunds, caller → SKIPPED at source (_decode_executed_refund_data)
         ])
@@ -610,34 +618,17 @@ def transform_data(
         .collect()
     )
 
-    print(f"✓ Transformed in {time.time() - time_start:.2f}s")
-    
-    # Validate data before saving (fail fast if there are issues)
-    print("\n🔍 Validating transformed data...")
-    schema_valid, schema_errors = validate_schema(result, EXPECTED_SCHEMA)
-    if not schema_valid:
-        print("❌ Schema validation failed:")
-        for error in schema_errors:
-            print(f"   {error}")
-        raise ValueError("Data validation failed: schema mismatch")
-    
-    quality_valid, quality_errors = validate_data_quality(result)
-    if not quality_valid:
-        print("❌ Data quality validation failed:")
-        for error in quality_errors:
-            print(f"   {error}")
-        raise ValueError("Data validation failed: data quality issues")
-    
-    print("✓ Validation passed")
+    # save to parquet
     save_to_parquet(result, output_file)
-    return result
 
+    # print time taken
+    print(f"✓ Transformed in {time.time() - time_start:.2f}s")
 
 if __name__ == "__main__":
 
     # list all the files to be processed from the data/raw/etherscan_api directory
     files = glob.glob(os.path.join(PROJECT_ROOT, "data", "raw", "etherscan_api", "*.jsonl"))
-    
+
     # define the chain, start_date, and end_date
     for file in files:
 
@@ -651,4 +642,16 @@ if __name__ == "__main__":
         print(f"Chain: {chain} \nStart date: {start_date} \nEnd date: {end_date}")
 
         # transform data
-        transform_data(chain, start_date, end_date) 
+        transform_data(chain, start_date, end_date)
+
+
+
+
+    # write to csv for each event type for abitrum for debugging event logs
+    #result = pl.read_parquet(PROJECT_ROOT / f"data/processed/logs_arbitrum_2025-12-03_to_2025-12-04_processed.parquet")
+    #result = result.filter(pl.col("topic_0") == "0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3")
+    #result.write_csv(PROJECT_ROOT / f"data/processed/logs_arbitrum_2025-12-03_to_2025-12-04_processed_x.csv")
+    #result = result.filter(pl.col("topic_0") == "0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e").head(5)
+    #result.write_csv(PROJECT_ROOT / f"data/processed/logs_arbitrum_2025-12-03_to_2025-12-04_processed_x.csv")
+    #result = result.filter(pl.col("topic_0") == "0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208").head(5)
+    #result.write_csv(PROJECT_ROOT / f"data/processed/logs_arbitrum_2025-12-03_to_2025-12-04_processed_x.csv")

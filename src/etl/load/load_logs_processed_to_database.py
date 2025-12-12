@@ -71,7 +71,14 @@ def create_raw_table(conn, table_name: str) -> None:
         funds_deposited_data_input_amount TEXT,
         funds_deposited_data_output_amount TEXT,
         funds_deposited_data_recipient    TEXT,
+        -- Optional fields: Not required for capital flow analysis, commented out for now
+        -- funds_deposited_data_quote_timestamp TEXT,       -- When exchange rate quote was generated
+        -- funds_deposited_data_fill_deadline TEXT,         -- Deadline by which deposit must be filled
+        -- funds_deposited_data_exclusivity_deadline TEXT,  -- Deadline for exclusive relayer rights
+        -- funds_deposited_data_exclusive_relayer TEXT,     -- Address with exclusive fill rights
         topic_chain_id              TEXT,
+        topic_root_bundle_id        TEXT,
+        topic_leaf_id               TEXT,
         amount_to_return            TEXT,
         l2_token_address            TEXT,
         refund_amounts              TEXT,
@@ -124,7 +131,14 @@ def load_parquet_to_raw_copy(conn, parquet_path: str, table_name: str) -> int:
         "funds_deposited_data_input_amount",
         "funds_deposited_data_output_amount",
         "funds_deposited_data_recipient",
+        # Optional fields: Not required for capital flow analysis, commented out for now
+        # "funds_deposited_data_quote_timestamp",
+        # "funds_deposited_data_fill_deadline",
+        # "funds_deposited_data_exclusivity_deadline",
+        # "funds_deposited_data_exclusive_relayer",
         "topic_chain_id",
+        "topic_root_bundle_id",
+        "topic_leaf_id",
         "amount_to_return",
         "l2_token_address",
         "refund_amounts",
