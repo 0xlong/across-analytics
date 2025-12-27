@@ -1,5 +1,5 @@
 
-  create view "across_analytics"."staging"."stg_arbitrum__refunds__dbt_tmp"
+  create view "across_analytics"."dbt_staging"."stg_arbitrum__refunds__dbt_tmp"
     
     
   as (

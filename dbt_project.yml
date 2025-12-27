@@ -50,7 +50,7 @@ models:
       # Materialized as views by default - fast, no storage cost, always fresh
       # Views are virtual tables that run the SQL query each time they're accessed
       materialized: view
-      
+      +schema: staging 
       # Apply these settings to all staging subdirectories (chains)
       # Each chain folder (ethereum, arbitrum, etc.) inherits these settings
       "+enabled": true
@@ -64,6 +64,7 @@ models:
     # Intermediate models combine staging models for business logic
     intermediate:
       materialized: view
+      +schema: intermediate
       "+enabled": true
     
     # Marts layer configuration (if you add this later)
@@ -71,6 +72,7 @@ models:
     marts:
       # Materialized as tables - stored data, faster queries, can be incremental
       materialized: table
+      +schema: marts
       "+enabled": true
 
 # Variables - reusable values you can reference in models

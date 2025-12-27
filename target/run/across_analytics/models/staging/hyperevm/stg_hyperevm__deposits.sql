@@ -1,5 +1,5 @@
 
-  create view "across_analytics"."staging"."stg_hyperevm__deposits__dbt_tmp"
+  create view "across_analytics"."dbt_staging"."stg_hyperevm__deposits__dbt_tmp"
     
     
   as (

@@ -117,6 +117,12 @@ temp_old_files/
 # Cursor IDE
 .cursor/
 
+#database files
+*.db
+*.sqlite
+*.sqlite3
+
+
 # Visual Studio Code
 .vscode/
 *.code-workspace
