@@ -38,6 +38,11 @@ WITH raw_deposits AS (
         AND funds_deposited_data_output_amount IS NOT NULL
 ),
 
+-- Uses the get_token_decimals macro which filters token_metadata seed by chain
+token_decimals AS (
+    {{ get_token_decimals('arbitrum') }}
+),
+
 cleaned_deposits AS (
     SELECT
         
@@ -82,12 +87,14 @@ cleaned_deposits AS (
         -- Input token: The token address being deposited on the origin chain
         -- Already decoded by ETL to proper address format
         -- Example: 0xaf88d065aC88dCc5619a6eeFdD463aAbdE3eE2c3 = USDC on Arbitrum
-        funds_deposited_data_input_token AS input_token_address,
+        -- Normalize to lowercase for joining with token metadata
+        LOWER(funds_deposited_data_input_token) AS input_token_address,
         
         -- Output token: The token address to receive on the destination chain
         -- Already decoded by ETL to proper address format
         -- Example: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 = USDC on Ethereum
-        funds_deposited_data_output_token AS output_token_address,
+        -- Normalize to lowercase for joining with token metadata
+        LOWER(funds_deposited_data_output_token) AS output_token_address,
         
         -- ============================================================
         -- AMOUNT INFORMATION (how much was deposited)
@@ -95,13 +102,13 @@ cleaned_deposits AS (
         
         -- Input amount: How much was deposited on the origin chain
         -- Already converted by ETL from hex to numeric (stored as text in raw table)
-        -- Stored as NUMERIC to handle large token amounts (18 decimals)
-        funds_deposited_data_input_amount::NUMERIC AS input_amount,
+        -- Store as RAW amount first (before rescaling by decimals)
+        funds_deposited_data_input_amount::NUMERIC AS input_amount_raw,
         
         -- Output amount: Expected amount to receive on destination chain
         -- Already converted by ETL from hex to numeric (stored as text in raw table)
-        -- Usually slightly less than input due to fees/spread, but can vary with exchange rates
-        funds_deposited_data_output_amount::NUMERIC AS output_amount,
+        -- Store as RAW amount first (before rescaling by decimals)
+        funds_deposited_data_output_amount::NUMERIC AS output_amount_raw,
         
         -- ============================================================
         -- TIMING INFORMATION (deadlines and quotes)
@@ -144,26 +151,42 @@ cleaned_deposits AS (
     FROM raw_deposits
 )
 
--- Final SELECT: Add any computed fields and ensure data quality
+
+-- ============================================================
+-- FINAL SELECT: Join with token metadata and rescale amounts
+-- ============================================================
 SELECT
     -- Event identity
-    deposit_timestamp,
-    transaction_hash,
-    blockchain,
-    source_file,
+    c.deposit_timestamp,
+    c.transaction_hash,
+    c.blockchain,
+    c.source_file,
     
     -- Indexed fields
-    destination_chain_id,
-    deposit_id,
-    depositor_address,
+    c.destination_chain_id,
+    c.deposit_id,
+    c.depositor_address,
     
-    -- Token info
-    input_token_address,
-    output_token_address,
+    -- ✨ NEW: Token information WITH NAMES
+    -- Input token (what was deposited on origin chain - Arbitrum)
+    c.input_token_address,
+    input_tok.token_symbol AS input_token_symbol,        -- e.g., 'USDC', 'WETH'
     
-    -- Amounts
-    input_amount,
-    output_amount,
+    -- Output token (what will be received on destination chain)
+    c.output_token_address,
+    output_tok.token_symbol AS output_token_symbol,      -- e.g., 'USDC', 'WETH'
+    
+    -- ✨ NEW: Rescaled amounts (human-readable)
+    -- These use the rescale_amount macro which divides raw amount by 10^decimals
+    -- Example: 5000000 raw USDC (6 decimals) → 5.0 USDC
+    {{ rescale_amount('c.input_amount_raw', 'input_tok.decimals') }} AS input_amount,
+    {{ rescale_amount('c.output_amount_raw', 'output_tok.decimals') }} AS output_amount,
+    
+    -- ✨ NEW: Raw amounts (preserved for auditing)
+    -- These are the original blockchain values before rescaling
+    -- Example: 5.0 USDC is stored as 5000000 on blockchain
+    c.input_amount_raw,
+    c.output_amount_raw,
     
     -- Timing (commented out - available in schema but not included in output)
     -- quote_timestamp,
@@ -171,15 +194,23 @@ SELECT
     -- exclusivity_deadline,
     
     -- User info
-    recipient_address
+    c.recipient_address
     -- exclusive_relayer_address  -- Commented out - available in schema but not included in output
     
-FROM cleaned_deposits
+FROM cleaned_deposits c
+
+-- Join with token metadata to get decimals and symbols for INPUT token
+LEFT JOIN token_decimals AS input_tok
+    ON c.input_token_address = input_tok.token_address
+
+-- Join with token metadata to get decimals and symbols for OUTPUT token
+LEFT JOIN token_decimals AS output_tok
+    ON c.output_token_address = output_tok.token_address
 
 -- Data quality: Only include rows with essential fields populated
-WHERE deposit_id IS NOT NULL
-    AND depositor_address IS NOT NULL
-    AND input_token_address IS NOT NULL
-    AND output_token_address IS NOT NULL
-    AND input_amount IS NOT NULL
-    AND output_amount IS NOT NULL
+WHERE c.deposit_id IS NOT NULL
+    AND c.depositor_address IS NOT NULL
+    AND c.input_token_address IS NOT NULL
+    AND c.output_token_address IS NOT NULL
+    AND c.input_amount_raw IS NOT NULL
+    AND c.output_amount_raw IS NOT NULL

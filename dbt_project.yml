@@ -18,7 +18,7 @@ seed-paths: ["data/seeds"]
 
 # Macro paths - where dbt looks for reusable SQL macros
 # Macros are like functions in SQL (e.g., hex_to_address)
-macro-paths: ["models/staging/macros"]
+macro-paths: ["models/macros"]
 
 # Analysis paths - for SQL files that are analyzed but not materialized
 analysis-paths: ["analyses"]
