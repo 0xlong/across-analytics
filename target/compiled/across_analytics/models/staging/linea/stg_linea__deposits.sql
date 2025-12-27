@@ -88,7 +88,11 @@ SELECT
     c.input_amount_raw / POWER(10, COALESCE(input_tok.decimals, 18))
  AS input_amount,
     
-    c.output_amount_raw / POWER(10, COALESCE(output_tok.decimals, 18))
+    CASE 
+        WHEN c.output_token_address = '0x0000000000000000000000000000000000000000' 
+        THEN c.output_amount_raw / POWER(10, COALESCE(input_tok.decimals, 18))
+        ELSE c.output_amount_raw / POWER(10, COALESCE(output_tok.decimals, 18))
+    END
  AS output_amount,
     c.input_amount_raw,
     c.output_amount_raw,

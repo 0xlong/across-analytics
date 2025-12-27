@@ -187,7 +187,7 @@ SELECT
     -- These use the rescale_amount macro which divides raw amount by 10^decimals
     -- Example: 5000000 raw USDC (6 decimals) → 5.0 USDC
     {{ rescale_amount('c.input_amount_raw', 'input_tok.decimals') }} AS input_amount,
-    {{ rescale_amount('c.output_amount_raw', 'output_tok.decimals') }} AS output_amount,
+    {{ rescale_output_amount('c.output_token_address', 'c.output_amount_raw', 'input_tok.decimals', 'output_tok.decimals') }} AS output_amount,
     
     -- ✨ NEW: Raw amounts (preserved for auditing)
     -- These are the original blockchain values before rescaling

@@ -106,7 +106,7 @@ SELECT
     
     -- Rescaled amounts (human-readable)
     {{ rescale_amount('c.input_amount_raw', 'input_tok.decimals') }} AS input_amount,
-    {{ rescale_amount('c.output_amount_raw', 'output_tok.decimals') }} AS output_amount,
+    {{ rescale_output_amount('c.output_token_address', 'c.output_amount_raw', 'input_tok.decimals', 'output_tok.decimals') }} AS output_amount,
     
     -- Raw amounts (preserved for auditing)
     c.input_amount_raw,

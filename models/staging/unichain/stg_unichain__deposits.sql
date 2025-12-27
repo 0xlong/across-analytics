@@ -72,7 +72,7 @@ SELECT
     c.output_token_address,
     output_tok.token_symbol AS output_token_symbol,
     {{ rescale_amount('c.input_amount_raw', 'input_tok.decimals') }} AS input_amount,
-    {{ rescale_amount('c.output_amount_raw', 'output_tok.decimals') }} AS output_amount,
+    {{ rescale_output_amount('c.output_token_address', 'c.output_amount_raw', 'input_tok.decimals', 'output_tok.decimals') }} AS output_amount,
     c.input_amount_raw,
     c.output_amount_raw,
     c.recipient_address

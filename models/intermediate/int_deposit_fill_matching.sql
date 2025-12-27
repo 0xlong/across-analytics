@@ -43,7 +43,8 @@ matched AS (
         
         -- === COMPUTED FIELDS ===
         -- Fill latency: How long did it take to fill? (in seconds)
-        EXTRACT(EPOCH FROM (f.fill_timestamp - d.deposit_timestamp)) AS fill_latency_seconds,
+        -- Use GREATEST(0, ...) to handle cross-chain timestamp sync issues
+        GREATEST(0, EXTRACT(EPOCH FROM (f.fill_timestamp - d.deposit_timestamp))) AS fill_latency_seconds,
         
         -- Is this deposit filled?
         CASE WHEN f.deposit_id IS NOT NULL THEN TRUE ELSE FALSE END AS is_filled,
@@ -51,7 +52,7 @@ matched AS (
         -- Slippage: Difference between expected and actual output
         CASE 
             WHEN f.output_amount IS NOT NULL AND d.output_amount > 0 
-            THEN (d.output_amount - f.output_amount) / d.output_amount * 100
+            THEN ROUND(((d.output_amount - f.output_amount) / d.output_amount * 100)::NUMERIC, 2)
             ELSE NULL 
         END AS slippage_percent
 

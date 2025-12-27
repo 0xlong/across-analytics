@@ -1,4 +1,5 @@
 -- Staging model for FilledRelay events from Polygon
+-- This model extracts fill events where relayers complete cross-chain bridge transactions
 
 WITH raw_fills AS (
 
@@ -32,6 +33,18 @@ WITH raw_fills AS (
     WHERE topic_0 = '0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208'
         AND filled_relay_data_input_amount IS NOT NULL
         AND filled_relay_data_output_amount IS NOT NULL
+),
+
+-- INPUT token metadata: includes chain_id for matching with origin_chain_id
+-- This allows us to find the correct token on whichever chain the deposit came from
+input_token_meta AS (
+    {{ get_token_decimals_by_chain_id() }}
+),
+
+-- OUTPUT token metadata: filtered to destination chain (Polygon)
+-- This is correct because on fills, output_token is always on the destination chain
+output_token_meta AS (
+    {{ get_token_decimals('polygon') }}
 ),
 
 cleaned_fills AS (
@@ -78,11 +91,13 @@ cleaned_fills AS (
         -- Input token: The token address on the origin chain
         -- Already decoded by ETL to proper address format
         -- Example: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 = USDC on Ethereum
-        filled_relay_data_input_token AS input_token_address,
+        -- Normalize to lowercase for joining with token metadata
+        LOWER(filled_relay_data_input_token) AS input_token_address,
         
         -- Output token: The token address on the destination chain (Polygon in this case)
         -- Already decoded by ETL to proper address format
-        filled_relay_data_output_token AS output_token_address,
+        -- Normalize to lowercase for joining with token metadata
+        LOWER(filled_relay_data_output_token) AS output_token_address,
         
         -- ============================================================
         -- AMOUNT INFORMATION (how much was bridged)
@@ -90,12 +105,14 @@ cleaned_fills AS (
         
         -- Input amount: How much was sent from origin chain
         -- Already converted by ETL from hex to numeric (stored as text in raw table)
-        filled_relay_data_input_amount::NUMERIC AS input_amount,
+        -- Store as RAW amount first (before rescaling by decimals)
+        filled_relay_data_input_amount::NUMERIC AS input_amount_raw,
         
         -- Output amount: How much was received on destination chain
         -- Already converted by ETL from hex to numeric (stored as text in raw table)
         -- Usually slightly less than input due to fees/spread
-        filled_relay_data_output_amount::NUMERIC AS output_amount,
+        -- Store as RAW amount first (before rescaling by decimals)
+        filled_relay_data_output_amount::NUMERIC AS output_amount_raw,
         
         -- ============================================================
         -- RELAYER & ROUTING INFORMATION
@@ -128,41 +145,67 @@ cleaned_fills AS (
     FROM raw_fills
 )
 
--- Final SELECT: Add any computed fields and ensure data quality
+-- ============================================================
+-- FINAL SELECT: Join with token metadata and rescale amounts
+-- ============================================================
 SELECT
     -- Event identity
-    fill_timestamp,
-    transaction_hash,
-    blockchain,
-    source_file,
+    c.fill_timestamp,
+    c.transaction_hash,
+    c.blockchain,
+    c.source_file,
     
     -- Indexed fields
-    origin_chain_id,
-    deposit_id,
-    relayer_address,
+    c.origin_chain_id,
+    c.deposit_id,
+    c.relayer_address,
     
-    -- Token info
-    input_token_address,
-    output_token_address,
+    -- Token info WITH NAMES
+    -- Input token (what was deposited on origin chain)
+    c.input_token_address,
+    input_tok.token_symbol AS input_token_symbol,        -- e.g., 'USDC', 'WETH'
     
-    -- Amounts
-    input_amount,
-    output_amount,
+    -- Output token (what was received on destination chain - Polygon)
+    c.output_token_address,
+    output_tok.token_symbol AS output_token_symbol,      -- e.g., 'USDC', 'WETH'
+    
+    -- Rescaled amounts (human-readable)
+    -- These use the rescale_amount macro which divides raw amount by 10^decimals
+    -- Example: 5000000 raw USDC (6 decimals) → 5.0 USDC
+    {{ rescale_amount('c.input_amount_raw', 'input_tok.decimals') }} AS input_amount,
+    {{ rescale_amount('c.output_amount_raw', 'output_tok.decimals') }} AS output_amount,
+    
+    -- Raw amounts (preserved for auditing)
+    -- These are the original blockchain values before rescaling
+    -- Example: 5.0 USDC is stored as 5000000 on blockchain
+    c.input_amount_raw,
+    c.output_amount_raw,
     
     -- Relayer routing
-    repayment_chain_id,
-    exclusive_relayer_address,
+    c.repayment_chain_id,
+    c.exclusive_relayer_address,
     
     -- User info
-    depositor_address,
-    recipient_address
+    c.depositor_address,
+    c.recipient_address
     
-FROM cleaned_fills
+FROM cleaned_fills c
+
+-- Join with token metadata to get decimals and symbols for INPUT token
+-- Join on BOTH address AND chain_id to match the correct origin chain
+LEFT JOIN input_token_meta AS input_tok
+    ON c.input_token_address = input_tok.token_address
+    AND c.origin_chain_id = input_tok.chain_id
+
+-- Join with token metadata to get decimals and symbols for OUTPUT token
+-- Join on address only - we already filtered to destination chain (Polygon)
+LEFT JOIN output_token_meta AS output_tok
+    ON c.output_token_address = output_tok.token_address
 
 -- Data quality: Only include rows with essential fields populated
-WHERE deposit_id IS NOT NULL
-    AND relayer_address IS NOT NULL
-    AND input_token_address IS NOT NULL
-    AND output_token_address IS NOT NULL
-    AND input_amount IS NOT NULL
-    AND output_amount IS NOT NULL
+WHERE c.deposit_id IS NOT NULL
+    AND c.relayer_address IS NOT NULL
+    AND c.input_token_address IS NOT NULL
+    AND c.output_token_address IS NOT NULL
+    AND c.input_amount_raw IS NOT NULL
+    AND c.output_amount_raw IS NOT NULL

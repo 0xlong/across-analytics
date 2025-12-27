@@ -136,7 +136,7 @@ monad_fills AS (
         fill_timestamp,
         transaction_hash,
         origin_chain_id,
-        140 AS destination_chain_id,  -- Fill happened ON Monad
+        143 AS destination_chain_id,  -- Fill happened ON Monad
         deposit_id,
         relayer_address,
         depositor_address,
@@ -149,19 +149,23 @@ monad_fills AS (
     FROM {{ ref('stg_monad__fills') }}
 )
 
+-- Supported chain IDs (chains we have parquet data for)
+-- 42161=Arbitrum, 1=Ethereum, 137=Polygon, 59144=Linea, 480=Worldchain, 130=Unichain, 999=HyperEVM, 143=Monad
+
 -- UNION ALL: Stack all fills from all chains into one table
-SELECT * FROM arbitrum_fills
+-- Filter: Only include fills where origin_chain_id is a supported chain
+SELECT * FROM arbitrum_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
 UNION ALL
-SELECT * FROM ethereum_fills
+SELECT * FROM ethereum_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
 UNION ALL
-SELECT * FROM polygon_fills
+SELECT * FROM polygon_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
 UNION ALL
-SELECT * FROM linea_fills
+SELECT * FROM linea_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
 UNION ALL
-SELECT * FROM worldchain_fills
+SELECT * FROM worldchain_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
 UNION ALL
-SELECT * FROM unichain_fills
+SELECT * FROM unichain_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
 UNION ALL
-SELECT * FROM hyperevm_fills
+SELECT * FROM hyperevm_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
 UNION ALL
-SELECT * FROM monad_fills
+SELECT * FROM monad_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
