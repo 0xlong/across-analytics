@@ -36,13 +36,27 @@ WITH raw_deposits AS (
 -- INPUT token metadata: filtered to origin chain (Ethereum)
 -- This is correct because input_token is always on the origin chain
 input_token_meta AS (
-    {{ get_token_decimals('ethereum') }}
+    
+    SELECT 
+        LOWER(token_address) AS token_address,
+        token_symbol,
+        decimals
+    FROM "across_analytics"."dbt"."token_metadata"
+    WHERE chain = 'ethereum'
+
 ),
 
 -- OUTPUT token metadata: includes chain_id for matching with destination_chain_id
 -- This allows us to find the correct token on whichever chain the funds are going to
 output_token_meta AS (
-    {{ get_token_decimals_by_chain_id() }}
+    
+    SELECT 
+        LOWER(token_address) AS token_address,
+        token_symbol,
+        decimals,
+        chain_id
+    FROM "across_analytics"."dbt"."token_metadata"
+
 ),
 
 cleaned_deposits AS (
@@ -105,8 +119,12 @@ SELECT
     output_tok.token_symbol AS output_token_symbol,
     
     -- Rescaled amounts (human-readable)
-    {{ rescale_amount('c.input_amount_raw', 'input_tok.decimals') }} AS input_amount,
-    {{ rescale_amount('c.output_amount_raw', 'output_tok.decimals') }} AS output_amount,
+    
+    c.input_amount_raw / POWER(10, COALESCE(input_tok.decimals, 18))
+ AS input_amount,
+    
+    c.output_amount_raw / POWER(10, COALESCE(output_tok.decimals, 18))
+ AS output_amount,
     
     -- Raw amounts (preserved for auditing)
     c.input_amount_raw,

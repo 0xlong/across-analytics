@@ -228,9 +228,9 @@
             "0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3"
         ],
         "tokens": {
-            "USDC": null,
+            "USDC": "0x078d782b760474a361dda0af3839290b0ef57ad6",
             "USDT": null,
-            "WETH": null,
+            "WETH": "0x4200000000000000000000000000000000000006",
             "WBTC": null,
             "DAI": null,
             "BAL": null

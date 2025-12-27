@@ -38,8 +38,9 @@ WITH raw_deposits AS (
         AND funds_deposited_data_output_amount IS NOT NULL
 ),
 
--- Uses the get_token_decimals macro which filters token_metadata seed by chain
-token_decimals AS (
+-- INPUT token metadata: filtered to origin chain (Arbitrum)
+-- This is correct because input_token is always on the origin chain
+input_token_meta AS (
     
     SELECT 
         LOWER(token_address) AS token_address,
@@ -47,6 +48,19 @@ token_decimals AS (
         decimals
     FROM "across_analytics"."dbt"."token_metadata"
     WHERE chain = 'arbitrum'
+
+),
+
+-- OUTPUT token metadata: includes chain_id for matching with destination_chain_id
+-- This allows us to find the correct token on whichever chain the funds are going to
+output_token_meta AS (
+    
+    SELECT 
+        LOWER(token_address) AS token_address,
+        token_symbol,
+        decimals,
+        chain_id
+    FROM "across_analytics"."dbt"."token_metadata"
 
 ),
 
@@ -211,12 +225,15 @@ SELECT
 FROM cleaned_deposits c
 
 -- Join with token metadata to get decimals and symbols for INPUT token
-LEFT JOIN token_decimals AS input_tok
+-- Join on address only - we already filtered to origin chain (Arbitrum)
+LEFT JOIN input_token_meta AS input_tok
     ON c.input_token_address = input_tok.token_address
 
 -- Join with token metadata to get decimals and symbols for OUTPUT token
-LEFT JOIN token_decimals AS output_tok
+-- Join on BOTH address AND chain_id to match the correct destination chain
+LEFT JOIN output_token_meta AS output_tok
     ON c.output_token_address = output_tok.token_address
+    AND c.destination_chain_id = output_tok.chain_id
 
 -- Data quality: Only include rows with essential fields populated
 WHERE c.deposit_id IS NOT NULL

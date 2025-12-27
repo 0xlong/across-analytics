@@ -1,12 +1,24 @@
--- int_unified_refunds.sql
+
+  create view "across_analytics"."dbt_intermediate"."int_unified_refunds__dbt_tmp"
+    
+    
+  as (
+    -- int_unified_refunds.sql
 -- PURPOSE: Combine refunds from ALL chains into ONE table with converted amounts
 -- WHY: Refunds = capital returning to relayers. Tracks when relayers get paid back.
 
-{{ config(materialized='view') }}
+
 
 -- Token metadata for amount conversion
 WITH token_meta AS (
-    {{ get_token_decimals_by_chain_id() }}
+    
+    SELECT 
+        LOWER(token_address) AS token_address,
+        token_symbol,
+        decimals,
+        chain_id
+    FROM "across_analytics"."dbt"."token_metadata"
+
 ),
 
 -- Each CTE selects from a chain's staging model
@@ -23,7 +35,7 @@ arbitrum_refunds AS (
         refund_amounts_string,
         refund_count,
         'arbitrum' AS source_blockchain
-    FROM {{ ref('stg_arbitrum__refunds') }}
+    FROM "across_analytics"."dbt_staging"."stg_arbitrum__refunds"
 ),
 
 ethereum_refunds AS (
@@ -39,7 +51,7 @@ ethereum_refunds AS (
         refund_amounts_string,
         refund_count,
         'ethereum' AS source_blockchain
-    FROM {{ ref('stg_ethereum__refunds') }}
+    FROM "across_analytics"."dbt_staging"."stg_ethereum__refunds"
 ),
 
 polygon_refunds AS (
@@ -55,7 +67,7 @@ polygon_refunds AS (
         refund_amounts_string,
         refund_count,
         'polygon' AS source_blockchain
-    FROM {{ ref('stg_polygon__refunds') }}
+    FROM "across_analytics"."dbt_staging"."stg_polygon__refunds"
 ),
 
 linea_refunds AS (
@@ -71,7 +83,7 @@ linea_refunds AS (
         refund_amounts_string,
         refund_count,
         'linea' AS source_blockchain
-    FROM {{ ref('stg_linea__refunds') }}
+    FROM "across_analytics"."dbt_staging"."stg_linea__refunds"
 ),
 
 worldchain_refunds AS (
@@ -87,7 +99,7 @@ worldchain_refunds AS (
         refund_amounts_string,
         refund_count,
         'worldchain' AS source_blockchain
-    FROM {{ ref('stg_worldchain__refunds') }}
+    FROM "across_analytics"."dbt_staging"."stg_worldchain__refunds"
 ),
 
 unichain_refunds AS (
@@ -103,7 +115,7 @@ unichain_refunds AS (
         refund_amounts_string,
         refund_count,
         'unichain' AS source_blockchain
-    FROM {{ ref('stg_unichain__refunds') }}
+    FROM "across_analytics"."dbt_staging"."stg_unichain__refunds"
 ),
 
 hyperevm_refunds AS (
@@ -119,7 +131,7 @@ hyperevm_refunds AS (
         refund_amounts_string,
         refund_count,
         'hyperevm' AS source_blockchain
-    FROM {{ ref('stg_hyperevm__refunds') }}
+    FROM "across_analytics"."dbt_staging"."stg_hyperevm__refunds"
 ),
 
 monad_refunds AS (
@@ -135,7 +147,7 @@ monad_refunds AS (
         refund_amounts_string,
         refund_count,
         'monad' AS source_blockchain
-    FROM {{ ref('stg_monad__refunds') }}
+    FROM "across_analytics"."dbt_staging"."stg_monad__refunds"
 ),
 
 -- UNION ALL: Stack all refunds from all chains
@@ -167,7 +179,9 @@ SELECT
     r.refund_token_address,
     tok.token_symbol AS refund_token_symbol,
     -- Rescaled amount (human-readable)
-    {{ rescale_amount('r.total_refund_amount_raw', 'tok.decimals') }} AS total_refund_amount,
+    
+    r.total_refund_amount_raw / POWER(10, COALESCE(tok.decimals, 18))
+ AS total_refund_amount,
     -- Raw amount (preserved for auditing)
     r.total_refund_amount_raw,
     r.refund_addresses_string,
@@ -181,3 +195,4 @@ FROM all_refunds r
 LEFT JOIN token_meta AS tok
     ON r.refund_token_address = tok.token_address
     AND r.chain_id = tok.chain_id
+  );
