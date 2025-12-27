@@ -61,6 +61,10 @@ env/
 .venv/
 .env.local
 
+# dbt
+target/
+dbt_packages/
+
 # mypy
 .mypy_cache/
 .dmypy.json
