@@ -1,0 +1,475 @@
+version: 2
+
+models:
+  # ==============================================
+  # UNIFIED DEPOSITS - All chains combined
+  # ==============================================
+  - name: int_unified_deposits
+    description: |
+      Unified view of all deposits across all supported chains.
+      Combines deposits from Arbitrum, Ethereum, Polygon, Linea, Worldchain, Unichain, HyperEVM, and Monad.
+      Adds origin_chain_id and filters by supported destination chains.
+    
+    columns:
+      # COMPOSITE KEY - deposit_id is unique per origin chain
+      - name: deposit_id
+        description: "Unique identifier for the deposit on the origin chain"
+        tests:
+          - not_null
+          - unique:
+              name: unique_deposit_per_chain
+              config:
+                where: "origin_chain_id IS NOT NULL"
+      
+      # CRITICAL TIMESTAMP
+      - name: deposit_timestamp
+        description: "When the deposit occurred on the origin blockchain"
+        tests:
+          - not_null
+      
+      # TRANSACTION IDENTIFICATION
+      - name: transaction_hash
+        description: "Unique transaction identifier on the origin blockchain"
+        tests:
+          - not_null
+      
+      # CHAIN IDENTIFIERS - Core to cross-chain logic
+      - name: origin_chain_id
+        description: "Chain ID where the deposit originated"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [42161, 1, 137, 59144, 480, 130, 999, 143]
+              name: valid_origin_chain
+      
+      - name: destination_chain_id
+        description: "Chain ID where funds are being sent"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [42161, 1, 137, 59144, 480, 130, 999, 143]
+              name: valid_destination_chain
+      
+      # PARTICIPANT ADDRESSES
+      - name: depositor_address
+        description: "Address of the user who initiated the deposit"
+        tests:
+          - not_null
+      
+      - name: recipient_address
+        description: "Address receiving the funds on destination chain"
+        tests:
+          - not_null
+      
+      # TOKEN FIELDS
+      - name: input_token_address
+        description: "Token address on the origin chain"
+        tests:
+          - not_null
+      
+      - name: output_token_address
+        description: "Token address on the destination chain"
+        tests:
+          - not_null
+      
+      - name: input_token_symbol
+        description: "Human-readable symbol for input token"
+      
+      - name: output_token_symbol
+        description: "Human-readable symbol for output token"
+      
+      # AMOUNT FIELDS - Critical for financial analysis
+      - name: input_amount
+        description: "Human-readable amount deposited (after decimal adjustment)"
+        tests:
+          - not_null
+      
+      - name: output_amount
+        description: "Expected amount to receive (after decimal adjustment)"
+        tests:
+          - not_null
+
+  # ==============================================
+  # UNIFIED FILLS - All chains combined
+  # ==============================================
+  - name: int_unified_fills
+    description: |
+      Unified view of all fills across all supported chains.
+      Combines fills from Arbitrum, Ethereum, Polygon, Linea, Worldchain, Unichain, HyperEVM, and Monad.
+      Adds destination_chain_id and filters by supported origin chains.
+      Note: deposit_id is NOT unique here (multiple fills per deposit are possible).
+    
+    columns:
+      # PRIMARY IDENTIFIER - Not unique (one deposit can have multiple fills)
+      - name: deposit_id
+        description: "Deposit identifier linking this fill to its original deposit"
+        tests:
+          - not_null
+      
+      # CRITICAL TIMESTAMP
+      - name: fill_timestamp
+        description: "When the fill occurred on the destination blockchain"
+        tests:
+          - not_null
+      
+      # TRANSACTION IDENTIFICATION
+      - name: transaction_hash
+        description: "Unique transaction identifier on the destination blockchain"
+        tests:
+          - not_null
+      
+      # CHAIN IDENTIFIERS
+      - name: origin_chain_id
+        description: "Chain ID where the original deposit happened"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [42161, 1, 137, 59144, 480, 130, 999, 143]
+              name: valid_fill_origin_chain
+      
+      - name: destination_chain_id
+        description: "Chain ID where the fill happened"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [42161, 1, 137, 59144, 480, 130, 999, 143]
+              name: valid_fill_destination_chain
+      
+      # PARTICIPANT ADDRESSES
+      - name: relayer_address
+        description: "Address of the relayer who provided liquidity"
+        tests:
+          - not_null
+      
+      - name: depositor_address
+        description: "Original user who initiated the bridge"
+        tests:
+          - not_null
+      
+      - name: recipient_address
+        description: "Final recipient of the bridged funds"
+        tests:
+          - not_null
+      
+      # TOKEN FIELDS
+      - name: input_token_address
+        description: "Token address on the origin chain"
+        tests:
+          - not_null
+      
+      - name: output_token_address
+        description: "Token address on the destination chain"
+        tests:
+          - not_null
+      
+      # AMOUNT FIELDS
+      - name: input_amount
+        description: "Human-readable amount sent from origin chain"
+        tests:
+          - not_null
+      
+      - name: output_amount
+        description: "Human-readable amount received on destination chain"
+        tests:
+          - not_null
+      
+      # RELAYER ROUTING
+      - name: repayment_chain_id
+        description: "Chain ID where the relayer gets reimbursed"
+        tests:
+          - not_null
+
+  # ==============================================
+  # UNIFIED REFUNDS - All chains combined with amount conversion
+  # ==============================================
+  - name: int_unified_refunds
+    description: |
+      Unified view of all refund batches across all supported chains.
+      Combines refunds from all chains and performs amount conversion via token_metadata join.
+      Uses composite key: chain_id + root_bundle_id + leaf_id (merkle tree identifiers).
+    
+    columns:
+      # MERKLE TREE COMPOSITE KEY
+      - name: chain_id
+        description: "Chain ID where the refund was executed"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [42161, 1, 137, 59144, 480, 130, 999, 143]
+              name: valid_refund_chain
+      
+      - name: root_bundle_id
+        description: "Merkle root bundle identifier grouping multiple refunds"
+        tests:
+          - not_null
+      
+      - name: leaf_id
+        description: "Leaf index in the merkle tree (identifies this specific refund batch)"
+        tests:
+          - not_null
+      
+      # CRITICAL TIMESTAMP
+      - name: refund_timestamp
+        description: "When the refund occurred on the blockchain"
+        tests:
+          - not_null
+      
+      # TRANSACTION IDENTIFICATION
+      - name: transaction_hash
+        description: "Unique transaction identifier on the blockchain"
+        tests:
+          - not_null
+      
+      # TOKEN FIELDS
+      - name: refund_token_address
+        description: "Token address being refunded"
+        tests:
+          - not_null
+      
+      - name: refund_token_symbol
+        description: "Human-readable token symbol"
+      
+      # AMOUNT FIELDS - Both raw and converted
+      - name: total_refund_amount
+        description: "Total capital returned in this batch (human-readable, after decimal conversion)"
+        tests:
+          - not_null
+      
+      - name: total_refund_amount_raw
+        description: "Raw blockchain amount before decimal scaling"
+        tests:
+          - not_null
+      
+      # BATCH INFORMATION
+      - name: refund_count
+        description: "Number of relayers being refunded in this batch"
+        tests:
+          - not_null
+      
+      - name: refund_amounts_string
+        description: "Comma-separated list of individual refund amounts"
+        tests:
+          - not_null
+      
+      - name: refund_addresses_string
+        description: "Comma-separated list of relayer addresses receiving refunds"
+        tests:
+          - not_null
+      
+      # SOURCE TRACKING
+      - name: source_blockchain
+        description: "Blockchain name where refund was executed"
+        tests:
+          - not_null
+
+  # ==============================================
+  # UNIFIED REFUNDS EXPANDED - Individual refunds per relayer
+  # ==============================================
+  - name: int_unified_refunds_expanded
+    description: |
+      Expands comma-separated refund arrays into individual rows (one row per relayer).
+      Uses UNNEST + WITH ORDINALITY to split strings and match amounts to addresses by index position.
+      Enables easy aggregation, filtering by relayer, and joins with relayer metrics.
+    
+    columns:
+      # UNIQUE IDENTIFIER
+      - name: refund_id
+        description: "Unique identifier: transaction_hash + leaf_id + refund_index"
+        tests:
+          - unique
+          - not_null
+      
+      # CRITICAL TIMESTAMP
+      - name: refund_timestamp
+        description: "When the refund occurred on the blockchain"
+        tests:
+          - not_null
+      
+      # TRANSACTION IDENTIFICATION
+      - name: transaction_hash
+        description: "Unique transaction identifier on the blockchain"
+        tests:
+          - not_null
+      
+      # BATCH IDENTIFIERS
+      - name: chain_id
+        description: "Chain ID where the refund was executed"
+        tests:
+          - not_null
+      
+      - name: root_bundle_id
+        description: "Merkle root bundle identifier"
+        tests:
+          - not_null
+      
+      - name: leaf_id
+        description: "Leaf index in the merkle tree"
+        tests:
+          - not_null
+      
+      # INDIVIDUAL REFUND DETAILS
+      - name: refund_index
+        description: "Position index of this refund in the batch (1-based)"
+        tests:
+          - not_null
+      
+      - name: relayer_address
+        description: "Address of the relayer receiving this refund"
+        tests:
+          - not_null
+      
+      - name: refund_token_address
+        description: "Token address being refunded"
+        tests:
+          - not_null
+      
+      - name: refund_token_symbol
+        description: "Human-readable token symbol"
+      
+      # INDIVIDUAL AMOUNT FIELDS
+      - name: refund_amount
+        description: "Individual refund amount (human-readable, after decimal conversion)"
+        tests:
+          - not_null
+      
+      - name: refund_amount_raw
+        description: "Individual raw blockchain amount before decimal scaling"
+        tests:
+          - not_null
+      
+      # BATCH CONTEXT
+      - name: batch_total_amount
+        description: "Total amount for the entire batch (for reference)"
+        tests:
+          - not_null
+      
+      - name: batch_total_amount_raw
+        description: "Total raw amount for the entire batch"
+        tests:
+          - not_null
+      
+      - name: batch_refund_count
+        description: "Number of refunds in this batch"
+        tests:
+          - not_null
+      
+      # SOURCE TRACKING
+      - name: source_blockchain
+        description: "Blockchain name where refund was executed"
+        tests:
+          - not_null
+
+  # ==============================================
+  # DEPOSIT FILL MATCHING - Core business logic
+  # ==============================================
+  - name: int_deposit_fill_matching
+    description: |
+      Core business model that matches every deposit to its fill (if it exists).
+      LEFT JOIN deposits to fills on deposit_id + origin/destination chain match.
+      Calculates critical metrics: fill_latency_seconds, is_filled flag, slippage_percent.
+      Unfilled deposits have NULL fill fields (tracks stuck capital).
+    
+    columns:
+      # UNIQUE IDENTIFIER
+      - name: deposit_id
+        description: "Unique identifier for the deposit"
+        tests:
+          - not_null
+      
+      # DEPOSIT CRITICAL FIELDS
+      - name: deposit_timestamp
+        description: "When the deposit occurred on the origin blockchain"
+        tests:
+          - not_null
+      
+      - name: deposit_tx_hash
+        description: "Deposit transaction hash on the origin blockchain"
+        tests:
+          - not_null
+      
+      - name: origin_chain_id
+        description: "Chain ID where the deposit originated"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [42161, 1, 137, 59144, 480, 130, 999, 143]
+              name: valid_matching_origin_chain
+      
+      - name: destination_chain_id
+        description: "Chain ID where funds are being sent"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [42161, 1, 137, 59144, 480, 130, 999, 143]
+              name: valid_matching_destination_chain
+      
+      - name: depositor_address
+        description: "Address of the user who initiated the deposit"
+        tests:
+          - not_null
+      
+      - name: deposit_recipient
+        description: "Recipient address from the deposit"
+        tests:
+          - not_null
+      
+      - name: deposit_token
+        description: "Token address deposited on origin chain"
+        tests:
+          - not_null
+      
+      - name: deposit_amount
+        description: "Human-readable amount deposited"
+        tests:
+          - not_null
+      
+      - name: expected_output_amount
+        description: "Expected amount to receive on destination chain"
+        tests:
+          - not_null
+      
+      # FILL FIELDS - Can be NULL for unfilled deposits
+      - name: fill_timestamp
+        description: "When the fill occurred (NULL if unfilled)"
+      
+      - name: fill_tx_hash
+        description: "Fill transaction hash (NULL if unfilled)"
+      
+      - name: relayer_address
+        description: "Relayer who filled the deposit (NULL if unfilled)"
+      
+      - name: fill_token
+        description: "Token address on destination chain (NULL if unfilled)"
+      
+      - name: actual_output_amount
+        description: "Actual amount received on destination chain (NULL if unfilled)"
+      
+      - name: repayment_chain_id
+        description: "Chain where relayer gets reimbursed (NULL if unfilled)"
+      
+      # COMPUTED METRICS
+      - name: is_filled
+        description: "Boolean flag indicating if the deposit has been filled"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+      
+      - name: fill_latency_seconds
+        description: "Time between deposit and fill in seconds (NULL if unfilled, >= 0 if filled due to GREATEST(0, ...) in model logic)"
+      
+      - name: slippage_percent
+        description: "Percentage difference between expected and actual output (NULL if unfilled)"
+      
+      - name: route_id
+        description: "Route identifier: origin_chain_id || '_' || destination_chain_id"
+        tests:
+          - not_null

@@ -1,0 +1,276 @@
+version: 2
+
+models:
+  # ==============================================
+  # DEPOSITS - Users initiating bridge transactions
+  # ==============================================
+  - name: stg_arbitrum__deposits
+    description: |
+      Staging model for FundsDeposited events from Arbitrum.
+      This captures all deposit events where users initiate cross-chain bridge transactions.
+    
+    columns:
+      # PRIMARY IDENTIFIER - Must be unique and never null
+      - name: deposit_id
+        description: "Unique identifier linking this deposit to its fill(s)"
+        tests:
+          - unique
+          - not_null
+      
+      # CRITICAL FIELDS - Must never be null
+      - name: deposit_timestamp
+        description: "When the deposit occurred on the blockchain"
+        tests:
+          - not_null
+      
+      - name: transaction_hash
+        description: "Unique transaction identifier on the blockchain"
+        tests:
+          - not_null
+      
+      - name: depositor_address
+        description: "Address of the user who initiated the deposit"
+        tests:
+          - not_null
+      
+      - name: blockchain
+        description: "Source blockchain (should always be 'arbitrum')"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['arbitrum']
+      
+      # TOKEN FIELDS - Must be present for proper processing
+      - name: input_token_address
+        description: "Token address being deposited on the origin chain (Arbitrum)"
+        tests:
+          - not_null
+      
+      - name: output_token_address
+        description: "Token address to receive on the destination chain"
+        tests:
+          - not_null
+      
+      - name: input_token_symbol
+        description: "Human-readable token symbol (e.g., USDC, WETH)"
+      
+      - name: output_token_symbol
+        description: "Human-readable output token symbol"
+      
+      # AMOUNT FIELDS - Critical for financial analysis
+      - name: input_amount
+        description: "Human-readable amount deposited (after decimal adjustment)"
+        tests:
+          - not_null
+      
+      - name: output_amount
+        description: "Expected amount to receive (after decimal adjustment)"
+        tests:
+          - not_null
+      
+      - name: input_amount_raw
+        description: "Raw blockchain amount before decimal scaling"
+        tests:
+          - not_null
+      
+      - name: output_amount_raw
+        description: "Raw expected output amount before decimal scaling"
+        tests:
+          - not_null
+      
+      # DESTINATION INFO
+      - name: destination_chain_id
+        description: "Chain ID where the funds are being sent to"
+        tests:
+          - not_null
+      
+      - name: recipient_address
+        description: "Who receives the funds on the destination chain"
+        tests:
+          - not_null
+      
+      - name: source_file
+        description: "Source file for data lineage tracking"
+
+  # ==============================================
+  # FILLS - Relayers completing bridge transactions
+  # ==============================================
+  - name: stg_arbitrum__fills
+    description: |
+      Staging model for FilledRelay events from Arbitrum.
+      This captures all fill events where relayers complete cross-chain bridge transactions.
+    
+    columns:
+      # PRIMARY IDENTIFIER - Must be present (but may not be unique as one deposit can have multiple fills)
+      - name: deposit_id
+        description: "Deposit identifier linking this fill to its original deposit"
+        tests:
+          - not_null
+      
+      # CRITICAL FIELDS
+      - name: fill_timestamp
+        description: "When the fill occurred on the blockchain"
+        tests:
+          - not_null
+      
+      - name: transaction_hash
+        description: "Unique transaction identifier on the blockchain"
+        tests:
+          - not_null
+      
+      - name: relayer_address
+        description: "Address of the relayer who provided liquidity"
+        tests:
+          - not_null
+      
+      - name: blockchain
+        description: "Destination blockchain (should always be 'arbitrum')"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['arbitrum']
+      
+      # TOKEN FIELDS
+      - name: input_token_address
+        description: "Token address on the origin chain"
+        tests:
+          - not_null
+      
+      - name: output_token_address
+        description: "Token address on the destination chain (Arbitrum)"
+        tests:
+          - not_null
+      
+      - name: input_token_symbol
+        description: "Human-readable input token symbol"
+      
+      - name: output_token_symbol
+        description: "Human-readable output token symbol"
+      
+      # AMOUNT FIELDS
+      - name: input_amount
+        description: "Human-readable amount sent from origin chain"
+        tests:
+          - not_null
+      
+      - name: output_amount
+        description: "Human-readable amount received on destination chain"
+        tests:
+          - not_null
+      
+      - name: input_amount_raw
+        description: "Raw input amount before decimal scaling"
+        tests:
+          - not_null
+      
+      - name: output_amount_raw
+        description: "Raw output amount before decimal scaling"
+        tests:
+          - not_null
+      
+      # ORIGIN INFO
+      - name: origin_chain_id
+        description: "Chain ID where the original deposit happened"
+        tests:
+          - not_null
+      
+      # RELAYER ROUTING
+      - name: repayment_chain_id
+        description: "Chain ID where the relayer gets reimbursed"
+        tests:
+          - not_null
+      
+      - name: depositor_address
+        description: "Original user who initiated the bridge"
+        tests:
+          - not_null
+      
+      - name: recipient_address
+        description: "Final recipient of the bridged funds"
+        tests:
+          - not_null
+      
+      - name: exclusive_relayer_address
+        description: "Address with exclusive fill rights (NULL if no exclusive relayer)"
+      
+      - name: source_file
+        description: "Source file for data lineage tracking"
+
+  # ==============================================
+  # REFUNDS - Relayer capital returns
+  # ==============================================
+  - name: stg_arbitrum__refunds
+    description: |
+      Staging model for ExecutedRelayerRefundRoot events from Arbitrum.
+      This captures refund batches where relayers receive back their fronted capital.
+    
+    columns:
+      # MERKLE TREE IDENTIFIERS - Together these form a composite key
+      - name: chain_id
+        description: "Chain ID where the refund was executed"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [42161]  # Arbitrum One
+      
+      - name: root_bundle_id
+        description: "Merkle root bundle identifier grouping multiple refunds"
+        tests:
+          - not_null
+      
+      - name: leaf_id
+        description: "Leaf index in the merkle tree (identifies this specific refund batch)"
+        tests:
+          - not_null
+      
+      # CRITICAL FIELDS
+      - name: refund_timestamp
+        description: "When the refund occurred on the blockchain"
+        tests:
+          - not_null
+      
+      - name: transaction_hash
+        description: "Unique transaction identifier on the blockchain"
+        tests:
+          - not_null
+      
+      - name: blockchain
+        description: "Blockchain where refund was executed (should always be 'arbitrum')"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['arbitrum']
+      
+      # TOKEN AND AMOUNT FIELDS
+      - name: refund_token_address
+        description: "Token address being refunded on Arbitrum"
+        tests:
+          - not_null
+      
+      - name: total_refund_amount
+        description: "Total capital returned in this batch (sum of all individual refunds)"
+        tests:
+          - not_null
+      
+      # BATCH INFORMATION
+      - name: refund_count
+        description: "Number of relayers being refunded in this batch"
+        tests:
+          - not_null
+      
+      - name: refund_amounts_string
+        description: "Comma-separated list of individual refund amounts"
+        tests:
+          - not_null
+      
+      - name: refund_addresses_string
+        description: "Comma-separated list of relayer addresses receiving refunds"
+        tests:
+          - not_null
+      
+      - name: source_file
+        description: "Source file for data lineage tracking"
