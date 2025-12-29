@@ -9,6 +9,17 @@ WITH token_meta AS (
     {{ get_token_decimals_by_chain_id() }}
 ),
 
+-- Chain ID to Name mapping for chains with parquet data
+chain_names AS (
+    SELECT chain_id, chain_name
+    FROM (
+        VALUES
+        (1, 'Ethereum'), (42161, 'Arbitrum'), (137, 'Polygon'),
+        (59144, 'Linea'), (480, 'Worldchain'), (130, 'Unichain'),
+        (999, 'HyperEVM'), (143, 'Monad')
+    ) AS chains(chain_id, chain_name)
+),
+
 -- Each CTE selects from a chain's staging model
 arbitrum_refunds AS (
     SELECT 
@@ -162,6 +173,7 @@ SELECT
     r.refund_timestamp,
     r.transaction_hash,
     r.chain_id,
+    cn.chain_name,
     r.root_bundle_id,
     r.leaf_id,
     r.refund_token_address,
@@ -177,7 +189,11 @@ SELECT
 
 FROM all_refunds r
 
+-- Join for chain name
+LEFT JOIN chain_names cn ON r.chain_id = cn.chain_id
+
 -- Join with token metadata on address + chain_id
 LEFT JOIN token_meta AS tok
     ON r.refund_token_address = tok.token_address
     AND r.chain_id = tok.chain_id
+

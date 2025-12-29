@@ -147,25 +147,60 @@ monad_fills AS (
         output_amount,
         repayment_chain_id
     FROM {{ ref('stg_monad__fills') }}
-)
+),
 
 -- Supported chain IDs (chains we have parquet data for)
 -- 42161=Arbitrum, 1=Ethereum, 137=Polygon, 59144=Linea, 480=Worldchain, 130=Unichain, 999=HyperEVM, 143=Monad
 
+-- Chain ID to Name mapping for chains with parquet data
+chain_names AS (
+    SELECT chain_id, chain_name
+    FROM (
+        VALUES
+        (1, 'Ethereum'), (42161, 'Arbitrum'), (137, 'Polygon'),
+        (59144, 'Linea'), (480, 'Worldchain'), (130, 'Unichain'),
+        (999, 'HyperEVM'), (143, 'Monad')
+    ) AS chains(chain_id, chain_name)
+),
+
 -- UNION ALL: Stack all fills from all chains into one table
 -- Filter: Only include fills where origin_chain_id is a supported chain
-SELECT * FROM arbitrum_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
-UNION ALL
-SELECT * FROM ethereum_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
-UNION ALL
-SELECT * FROM polygon_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
-UNION ALL
-SELECT * FROM linea_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
-UNION ALL
-SELECT * FROM worldchain_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
-UNION ALL
-SELECT * FROM unichain_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
-UNION ALL
-SELECT * FROM hyperevm_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
-UNION ALL
-SELECT * FROM monad_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+all_fills AS (
+    SELECT * FROM arbitrum_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    UNION ALL
+    SELECT * FROM ethereum_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    UNION ALL
+    SELECT * FROM polygon_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    UNION ALL
+    SELECT * FROM linea_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    UNION ALL
+    SELECT * FROM worldchain_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    UNION ALL
+    SELECT * FROM unichain_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    UNION ALL
+    SELECT * FROM hyperevm_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    UNION ALL
+    SELECT * FROM monad_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+)
+
+-- Final SELECT with descriptive chain names
+SELECT
+    f.fill_timestamp,
+    f.transaction_hash,
+    f.origin_chain_id,
+    oc.chain_name AS origin_chain_name,
+    f.destination_chain_id,
+    dc.chain_name AS destination_chain_name,
+    f.deposit_id,
+    f.relayer_address,
+    f.depositor_address,
+    f.recipient_address,
+    f.input_token_address,
+    f.output_token_address,
+    f.input_amount,
+    f.output_amount,
+    f.repayment_chain_id
+FROM all_fills f
+LEFT JOIN chain_names oc ON f.origin_chain_id = oc.chain_id
+LEFT JOIN chain_names dc ON f.destination_chain_id = dc.chain_id
+

@@ -22,6 +22,7 @@ expanded AS (
         refund_timestamp,
         transaction_hash,
         chain_id,
+        chain_name,
         root_bundle_id,
         leaf_id,
         refund_token_address,
@@ -58,6 +59,7 @@ SELECT
     
     -- Batch identifiers (for grouping back if needed)
     chain_id,
+    chain_name,
     root_bundle_id,
     leaf_id,
     

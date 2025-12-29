@@ -10,7 +10,31 @@
 
 {{ config(materialized='view') }}
 
-WITH deposits AS (
+-- Chain ID to Name mapping for chains with parquet data
+WITH chain_names AS (
+    SELECT 
+        chain_id,
+        chain_name
+    FROM (
+        VALUES
+        -- Only chains we have parquet data for:
+        (1, 'Ethereum'),
+        (42161, 'Arbitrum'),
+        (137, 'Polygon'),
+        (59144, 'Linea'),
+        (480, 'Worldchain'),
+        (130, 'Unichain'),
+        (999, 'HyperEVM'),
+        (143, 'Monad')
+    ) AS chains(chain_id, chain_name)
+),
+
+-- Token metadata for symbol lookups
+token_metadata AS (
+    SELECT * FROM {{ ref('token_metadata') }}
+),
+
+deposits AS (
     SELECT * FROM {{ ref('int_unified_deposits') }}
 ),
 
@@ -49,6 +73,19 @@ matched AS (
         -- Is this deposit filled?
         CASE WHEN f.deposit_id IS NOT NULL THEN TRUE ELSE FALSE END AS is_filled,
         
+        -- Fee: difference between deposited amount and filled amount
+        CASE 
+            WHEN f.output_amount IS NOT NULL
+            THEN ROUND((d.input_amount - f.output_amount)::NUMERIC, 2)
+            ELSE NULL 
+        END AS bridge_fee_nominal,
+        
+        CASE 
+            WHEN f.output_amount IS NOT NULL
+            THEN ROUND(((d.input_amount - f.output_amount) / d.input_amount * 100)::NUMERIC, 2)
+            ELSE NULL 
+        END AS bridge_fee_percent,
+        
         -- Slippage: Difference between expected and actual output
         CASE 
             WHEN f.output_amount IS NOT NULL AND d.output_amount > 0 
@@ -67,33 +104,57 @@ matched AS (
 
 SELECT
     -- Identity
-    deposit_timestamp,
-    deposit_tx_hash,
-    origin_chain_id,
-    destination_chain_id,
-    deposit_id,
+    m.deposit_timestamp,
+    m.deposit_tx_hash,
+    m.origin_chain_id,
+    oc.chain_name AS origin_chain_name,
+    m.destination_chain_id,
+    dc.chain_name AS destination_chain_name,
+    m.deposit_id,
     
     -- Deposit details
-    depositor_address,
-    deposit_recipient,
-    deposit_token,
-    deposit_amount,
-    expected_output_amount,
+    m.depositor_address,
+    m.deposit_recipient,
+    m.deposit_token,
+    dt.token_symbol AS deposit_token_symbol,
+    m.deposit_amount,
+    m.expected_output_amount,
     
     -- Fill details (NULL if unfilled)
-    fill_timestamp,
-    fill_tx_hash,
-    relayer_address,
-    fill_token,
-    actual_output_amount,
-    repayment_chain_id,
+    m.fill_timestamp,
+    m.fill_tx_hash,
+    m.relayer_address,
+    m.fill_token,
+    ft.token_symbol AS fill_token_symbol,
+    m.actual_output_amount,
+    m.repayment_chain_id,
     
     -- Metrics
-    fill_latency_seconds,
-    is_filled,
-    slippage_percent,
+    m.fill_latency_seconds,
+    m.is_filled,
+    m.bridge_fee_nominal,
+    m.bridge_fee_percent,
+    m.slippage_percent,
     
     -- Route identifier (for aggregations)
-    origin_chain_id || '_' || destination_chain_id AS route_id
+    oc.chain_name || ' → ' || dc.chain_name AS route_name,
+    m.origin_chain_id || '_' || m.destination_chain_id AS route_id
 
-FROM matched
+FROM matched m
+
+-- Join for origin chain name
+LEFT JOIN chain_names oc ON m.origin_chain_id = oc.chain_id
+
+-- Join for destination chain name  
+LEFT JOIN chain_names dc ON m.destination_chain_id = dc.chain_id
+
+-- Join for deposit token symbol (origin chain token)
+LEFT JOIN token_metadata dt 
+    ON m.origin_chain_id = dt.chain_id 
+    AND LOWER(m.deposit_token) = LOWER(dt.token_address)
+
+-- Join for fill token symbol (destination chain token)
+LEFT JOIN token_metadata ft 
+    ON m.destination_chain_id = ft.chain_id 
+    AND LOWER(m.fill_token) = LOWER(ft.token_address)
+
