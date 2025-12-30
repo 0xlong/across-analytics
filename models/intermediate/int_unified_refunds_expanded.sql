@@ -27,6 +27,7 @@ expanded AS (
         leaf_id,
         refund_token_address,
         refund_token_symbol,
+        token_decimals,
         total_refund_amount,
         total_refund_amount_raw,
         refund_count,
@@ -69,13 +70,8 @@ SELECT
     refund_token_address,
     refund_token_symbol,
     
-    -- Individual refund amount (rescaled using same decimals as batch total)
-    -- Since int_unified_refunds already joined with token_meta, we use same conversion
-    CASE 
-        WHEN total_refund_amount_raw > 0 AND total_refund_amount > 0 
-        THEN refund_amount_raw * (total_refund_amount / total_refund_amount_raw)
-        ELSE refund_amount_raw
-    END AS refund_amount,
+    -- Individual refund amount (rescaled using token decimals)
+    {{ rescale_amount('refund_amount_raw', 'token_decimals') }} AS refund_amount,
     refund_amount_raw,
     
     -- Batch context (useful for analysis)

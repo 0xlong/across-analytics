@@ -17,6 +17,7 @@ WITH arbitrum_fills AS (
         recipient_address,
         input_token_address,
         output_token_address,
+        output_token_symbol,
         input_amount,
         output_amount,
         repayment_chain_id
@@ -35,6 +36,7 @@ ethereum_fills AS (
         recipient_address,
         input_token_address,
         output_token_address,
+        output_token_symbol,
         input_amount,
         output_amount,
         repayment_chain_id
@@ -53,6 +55,7 @@ polygon_fills AS (
         recipient_address,
         input_token_address,
         output_token_address,
+        output_token_symbol,
         input_amount,
         output_amount,
         repayment_chain_id
@@ -71,6 +74,7 @@ linea_fills AS (
         recipient_address,
         input_token_address,
         output_token_address,
+        output_token_symbol,
         input_amount,
         output_amount,
         repayment_chain_id
@@ -89,6 +93,7 @@ worldchain_fills AS (
         recipient_address,
         input_token_address,
         output_token_address,
+        output_token_symbol,
         input_amount,
         output_amount,
         repayment_chain_id
@@ -107,6 +112,7 @@ unichain_fills AS (
         recipient_address,
         input_token_address,
         output_token_address,
+        output_token_symbol,
         input_amount,
         output_amount,
         repayment_chain_id
@@ -125,6 +131,7 @@ hyperevm_fills AS (
         recipient_address,
         input_token_address,
         output_token_address,
+        output_token_symbol,
         input_amount,
         output_amount,
         repayment_chain_id
@@ -143,6 +150,7 @@ monad_fills AS (
         recipient_address,
         input_token_address,
         output_token_address,
+        output_token_symbol,
         input_amount,
         output_amount,
         repayment_chain_id
@@ -197,6 +205,7 @@ SELECT
     f.recipient_address,
     f.input_token_address,
     f.output_token_address,
+    f.output_token_symbol AS fill_token_symbol,  -- Token symbol for the filled amount
     f.input_amount,
     f.output_amount,
     f.repayment_chain_id

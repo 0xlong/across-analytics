@@ -185,6 +185,7 @@ SELECT
     r.leaf_id,
     r.refund_token_address,
     tok.token_symbol AS refund_token_symbol,
+    tok.decimals AS token_decimals,
     -- Rescaled amount (human-readable)
     
     r.total_refund_amount_raw / POWER(10, COALESCE(tok.decimals, 18))

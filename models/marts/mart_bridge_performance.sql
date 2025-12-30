@@ -95,6 +95,7 @@ SELECT
     mm.destination_chain_id,
     dc.chain_name AS destination_chain_name,
     mm.route_id,
+    oc.chain_name || ' → ' || dc.chain_name AS route_name,
     mm.deposit_token,
     tm.token_symbol,
     

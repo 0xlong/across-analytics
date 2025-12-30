@@ -178,6 +178,7 @@ SELECT
     r.leaf_id,
     r.refund_token_address,
     tok.token_symbol AS refund_token_symbol,
+    tok.decimals AS token_decimals,
     -- Rescaled amount (human-readable)
     {{ rescale_amount('r.total_refund_amount_raw', 'tok.decimals') }} AS total_refund_amount,
     -- Raw amount (preserved for auditing)
