@@ -195,6 +195,16 @@ chain_names AS (
     ) AS chains(chain_id, chain_name)
 ),
 
+-- Hourly token prices for USD conversion
+token_prices AS (
+    SELECT 
+        token_symbol,
+        DATE_TRUNC('hour', timestamp::TIMESTAMP) AS price_hour,
+        AVG(price_usd) AS price_usd
+    FROM {{ ref('token_prices') }}
+    GROUP BY token_symbol, DATE_TRUNC('hour', timestamp::TIMESTAMP)
+),
+
 -- UNION ALL: Stack all fills from all chains into one table
 -- Filter: Only include fills where origin_chain_id is a supported chain
 all_fills AS (
@@ -215,7 +225,7 @@ all_fills AS (
     SELECT * FROM monad_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
 )
 
--- Final SELECT with descriptive chain names
+-- Final SELECT with descriptive chain names and USD amounts
 SELECT
     f.fill_timestamp,
     f.transaction_hash,
@@ -236,8 +246,14 @@ SELECT
     -- Gas data (for relayer cost analysis)
     f.gas_price_wei,
     f.gas_used,
-    f.gas_cost_wei
+    f.gas_cost_wei,
+    -- USD price data
+    tp.price_usd AS output_token_price_usd,
+    ROUND((f.output_amount * COALESCE(tp.price_usd, 1))::NUMERIC, 2) AS output_amount_usd
 FROM all_fills f
 LEFT JOIN chain_names oc ON f.origin_chain_id = oc.chain_id
 LEFT JOIN chain_names dc ON f.destination_chain_id = dc.chain_id
-
+-- Join for output token price at fill hour
+LEFT JOIN token_prices tp
+    ON f.output_token_symbol = tp.token_symbol
+    AND DATE_TRUNC('hour', f.fill_timestamp) = tp.price_hour

@@ -163,6 +163,16 @@ chain_names AS (
     ) AS chains(chain_id, chain_name)
 ),
 
+-- Hourly token prices for USD conversion
+token_prices AS (
+    SELECT 
+        token_symbol,
+        DATE_TRUNC('hour', timestamp::TIMESTAMP) AS price_hour,
+        AVG(price_usd) AS price_usd
+    FROM {{ ref('token_prices') }}
+    GROUP BY token_symbol, DATE_TRUNC('hour', timestamp::TIMESTAMP)
+),
+
 -- UNION ALL: Stack all deposits from all chains into one table
 -- Filter: Only include deposits where destination_chain_id is a supported chain
 all_deposits AS (
@@ -183,7 +193,7 @@ all_deposits AS (
     SELECT * FROM monad_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
 )
 
--- Final SELECT with descriptive chain names
+-- Final SELECT with descriptive chain names and USD amounts
 SELECT
     d.deposit_timestamp,
     d.transaction_hash,
@@ -199,8 +209,14 @@ SELECT
     d.output_token_address,
     d.output_token_symbol,
     d.input_amount,
-    d.output_amount
+    d.output_amount,
+    -- USD price data
+    tp.price_usd AS input_token_price_usd,
+    ROUND((d.input_amount * COALESCE(tp.price_usd, 1))::NUMERIC, 2) AS input_amount_usd
 FROM all_deposits d
 LEFT JOIN chain_names oc ON d.origin_chain_id = oc.chain_id
 LEFT JOIN chain_names dc ON d.destination_chain_id = dc.chain_id
-
+-- Join for input token price at deposit hour
+LEFT JOIN token_prices tp
+    ON d.input_token_symbol = tp.token_symbol
+    AND DATE_TRUNC('hour', d.deposit_timestamp) = tp.price_hour

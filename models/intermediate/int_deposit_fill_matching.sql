@@ -34,6 +34,17 @@ token_metadata AS (
     SELECT * FROM {{ ref('token_metadata') }}
 ),
 
+-- Hourly token prices for USD conversion
+-- Truncate to hour for matching with transaction timestamps
+token_prices AS (
+    SELECT 
+        token_symbol,
+        DATE_TRUNC('hour', timestamp::TIMESTAMP) AS price_hour,
+        AVG(price_usd) AS price_usd  -- Average in case of duplicate hours
+    FROM {{ ref('token_prices') }}
+    GROUP BY token_symbol, DATE_TRUNC('hour', timestamp::TIMESTAMP)
+),
+
 deposits AS (
     SELECT * FROM {{ ref('int_unified_deposits') }}
 ),
@@ -120,6 +131,10 @@ SELECT
     m.deposit_amount,
     m.expected_output_amount,
     
+    -- USD-normalized amounts (joined from hourly price data)
+    dp.price_usd AS deposit_token_price_usd,
+    ROUND((m.deposit_amount * COALESCE(dp.price_usd, 1))::NUMERIC, 2) AS deposit_amount_usd,
+    
     -- Fill details (NULL if unfilled)
     m.fill_timestamp,
     m.fill_tx_hash,
@@ -128,6 +143,14 @@ SELECT
     ft.token_symbol AS fill_token_symbol,
     m.actual_output_amount,
     m.repayment_chain_id,
+    
+    -- USD-normalized fill amount
+    fp.price_usd AS fill_token_price_usd,
+    CASE 
+        WHEN m.actual_output_amount IS NOT NULL 
+        THEN ROUND((m.actual_output_amount * COALESCE(fp.price_usd, 1))::NUMERIC, 2)
+        ELSE NULL 
+    END AS fill_amount_usd,
     
     -- Metrics
     m.fill_latency_seconds,
@@ -158,3 +181,12 @@ LEFT JOIN token_metadata ft
     ON m.destination_chain_id = ft.chain_id 
     AND LOWER(m.fill_token) = LOWER(ft.token_address)
 
+-- Join for deposit token price at deposit hour
+LEFT JOIN token_prices dp
+    ON dt.token_symbol = dp.token_symbol
+    AND DATE_TRUNC('hour', m.deposit_timestamp) = dp.price_hour
+
+-- Join for fill token price at fill hour
+LEFT JOIN token_prices fp
+    ON ft.token_symbol = fp.token_symbol
+    AND DATE_TRUNC('hour', m.fill_timestamp) = fp.price_hour

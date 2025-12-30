@@ -18,6 +18,16 @@ WITH unified AS (
     WHERE refund_count > 0  -- Only process batches with actual refunds
 ),
 
+-- Hourly token prices for USD conversion
+token_prices AS (
+    SELECT 
+        token_symbol,
+        DATE_TRUNC('hour', timestamp::TIMESTAMP) AS price_hour,
+        AVG(price_usd) AS price_usd
+    FROM "across_analytics"."dbt"."token_prices"
+    GROUP BY token_symbol, DATE_TRUNC('hour', timestamp::TIMESTAMP)
+),
+
 -- Unnest the comma-separated strings into individual rows
 -- Uses CROSS JOIN LATERAL with UNNEST to expand arrays
 -- WITH ORDINALITY gives us the position index for matching amounts to addresses
@@ -59,35 +69,45 @@ expanded AS (
 
 SELECT
     -- Event identification
-    refund_timestamp,
-    transaction_hash,
-    source_blockchain,
+    e.refund_timestamp,
+    e.transaction_hash,
+    e.source_blockchain,
     
     -- Batch identifiers (for grouping back if needed)
-    chain_id,
-    chain_name,
-    root_bundle_id,
-    leaf_id,
+    e.chain_id,
+    e.chain_name,
+    e.root_bundle_id,
+    e.leaf_id,
     
     -- Individual refund details
-    refund_index,
-    relayer_address,
-    refund_token_address,
-    refund_token_symbol,
+    e.refund_index,
+    e.relayer_address,
+    e.refund_token_address,
+    e.refund_token_symbol,
     
     -- Individual refund amount (rescaled using token decimals)
     
-    refund_amount_raw / POWER(10, COALESCE(token_decimals, 18))
+    e.refund_amount_raw / POWER(10, COALESCE(e.token_decimals, 18))
  AS refund_amount,
-    refund_amount_raw,
+    e.refund_amount_raw,
+    
+    -- USD price data
+    tp.price_usd AS refund_token_price_usd,
+    ROUND((
+    e.refund_amount_raw / POWER(10, COALESCE(e.token_decimals, 18))
+ * COALESCE(tp.price_usd, 1))::NUMERIC, 2) AS refund_amount_usd,
     
     -- Batch context (useful for analysis)
-    total_refund_amount AS batch_total_amount,
-    total_refund_amount_raw AS batch_total_amount_raw,
-    refund_count AS batch_refund_count,
+    e.total_refund_amount AS batch_total_amount,
+    e.total_refund_amount_raw AS batch_total_amount_raw,
+    e.refund_count AS batch_refund_count,
     
     -- Unique identifier for each individual refund record
-    transaction_hash || '-' || leaf_id || '-' || refund_index AS refund_id
+    e.transaction_hash || '-' || e.leaf_id || '-' || e.refund_index AS refund_id
     
-FROM expanded
+FROM expanded e
+-- Join for refund token price at refund hour
+LEFT JOIN token_prices tp
+    ON e.refund_token_symbol = tp.token_symbol
+    AND DATE_TRUNC('hour', e.refund_timestamp) = tp.price_hour
   );

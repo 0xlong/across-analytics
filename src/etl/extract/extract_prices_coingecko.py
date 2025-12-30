@@ -55,7 +55,7 @@ TOKEN_TO_COINGECKO_ID = {
     "POL": "matic-network",  # Polygon
     "BNB": "binancecoin",
     "HYPE": "hyperliquid",
-    "MONAD": "monad",  # Not listed on CoinGecko yet
+    "MONAD": "monad"
 }
 
 
