@@ -25,7 +25,11 @@ WITH raw_fills AS (
         filled_relay_data_repayment_chain_id,     -- Where relayer gets reimbursed
         filled_relay_data_exclusive_relayer,     -- Address with exclusive fill rights (if any)
         filled_relay_data_depositor,             -- Original user who initiated the bridge
-        filled_relay_data_recipient              -- Final recipient of the bridged funds
+        filled_relay_data_recipient,              -- Final recipient of the bridged funds
+        
+        -- Gas data (for relayer cost analysis)
+        gas_price_wei,
+        gas_used
         
     FROM raw.worldchain_logs_processed
     
@@ -140,7 +144,13 @@ cleaned_fills AS (
         -- Recipient: Who receives the funds on the destination chain
         -- Already decoded by ETL to proper address format
         -- Usually the same as depositor, but can be different (gift/transfer)
-        filled_relay_data_recipient AS recipient_address
+        filled_relay_data_recipient AS recipient_address,
+        
+        -- ============================================================
+        -- GAS DATA (for relayer cost analysis)
+        -- ============================================================
+        gas_price_wei::BIGINT AS gas_price_wei,
+        gas_used::BIGINT AS gas_used
         
     FROM raw_fills
 )
@@ -187,7 +197,12 @@ SELECT
     
     -- User info
     c.depositor_address,
-    c.recipient_address
+    c.recipient_address,
+    
+    -- Gas data (for relayer cost analysis)
+    c.gas_price_wei,
+    c.gas_used,
+    (c.gas_price_wei * c.gas_used) AS gas_cost_wei
     
 FROM cleaned_fills c
 

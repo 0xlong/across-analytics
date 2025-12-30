@@ -53,6 +53,9 @@ def create_raw_table(conn, table_name: str) -> None:
         timestamp_datetime          TEXT,
         transactionHash             TEXT,
         topic_0                     TEXT,
+        -- Gas data (for relayer cost analysis)
+        gas_price_wei               TEXT,
+        gas_used                    TEXT,
         topic_origin_chain_id       TEXT,
         topic_deposit_id            TEXT,
         topic_relayer               TEXT,
@@ -113,6 +116,8 @@ def load_parquet_to_raw_copy(conn, parquet_path: str, table_name: str) -> int:
         "timestamp_datetime",
         "transactionHash",
         "topic_0",
+        "gas_price_wei",
+        "gas_used",
         "topic_origin_chain_id",
         "topic_deposit_id",
         "topic_relayer",

@@ -7,7 +7,8 @@ WITH raw_fills AS (
         filled_relay_data_input_token, filled_relay_data_output_token,
         filled_relay_data_input_amount, filled_relay_data_output_amount,
         filled_relay_data_repayment_chain_id, filled_relay_data_exclusive_relayer,
-        filled_relay_data_depositor, filled_relay_data_recipient
+        filled_relay_data_depositor, filled_relay_data_recipient,
+        gas_price_wei, gas_used
     FROM raw.hyperevm_logs_processed
     WHERE topic_0 = '0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208'
         AND filled_relay_data_input_amount IS NOT NULL
@@ -40,7 +41,9 @@ cleaned_fills AS (
         (filled_relay_data_repayment_chain_id::NUMERIC)::BIGINT AS repayment_chain_id,
         filled_relay_data_exclusive_relayer AS exclusive_relayer_address,
         filled_relay_data_depositor AS depositor_address,
-        filled_relay_data_recipient AS recipient_address
+        filled_relay_data_recipient AS recipient_address,
+        gas_price_wei::BIGINT AS gas_price_wei,
+        gas_used::BIGINT AS gas_used
     FROM raw_fills
 )
 
@@ -53,7 +56,8 @@ SELECT
     {{ rescale_amount('c.output_amount_raw', 'output_tok.decimals') }} AS output_amount,
     c.input_amount_raw, c.output_amount_raw,
     c.repayment_chain_id, c.exclusive_relayer_address,
-    c.depositor_address, c.recipient_address
+    c.depositor_address, c.recipient_address,
+    c.gas_price_wei, c.gas_used, (c.gas_price_wei * c.gas_used) AS gas_cost_wei
 FROM cleaned_fills c
 LEFT JOIN input_token_meta AS input_tok
     ON c.input_token_address = input_tok.token_address AND c.origin_chain_id = input_tok.chain_id

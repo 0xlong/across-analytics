@@ -554,6 +554,10 @@ def transform_data(
             "transactionHash",
             "topic_0",                      # Event signature - filter by event type
             
+            # Gas data (for relayer cost analysis)
+            "gas_price_wei",
+            "gas_used",
+            
             # ═══════════════════════════════════════════════════════════════════
             # FILLED_RELAY - origin chain → destination chain (fill side)
             # ═══════════════════════════════════════════════════════════════════

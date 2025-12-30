@@ -20,7 +20,10 @@ WITH arbitrum_fills AS (
         output_token_symbol,
         input_amount,
         output_amount,
-        repayment_chain_id
+        repayment_chain_id,
+        gas_price_wei,
+        gas_used,
+        gas_cost_wei
     FROM {{ ref('stg_arbitrum__fills') }}
 ),
 
@@ -39,7 +42,10 @@ ethereum_fills AS (
         output_token_symbol,
         input_amount,
         output_amount,
-        repayment_chain_id
+        repayment_chain_id,
+        gas_price_wei,
+        gas_used,
+        gas_cost_wei
     FROM {{ ref('stg_ethereum__fills') }}
 ),
 
@@ -58,7 +64,10 @@ polygon_fills AS (
         output_token_symbol,
         input_amount,
         output_amount,
-        repayment_chain_id
+        repayment_chain_id,
+        gas_price_wei,
+        gas_used,
+        gas_cost_wei
     FROM {{ ref('stg_polygon__fills') }}
 ),
 
@@ -77,7 +86,10 @@ linea_fills AS (
         output_token_symbol,
         input_amount,
         output_amount,
-        repayment_chain_id
+        repayment_chain_id,
+        gas_price_wei,
+        gas_used,
+        gas_cost_wei
     FROM {{ ref('stg_linea__fills') }}
 ),
 
@@ -96,7 +108,10 @@ worldchain_fills AS (
         output_token_symbol,
         input_amount,
         output_amount,
-        repayment_chain_id
+        repayment_chain_id,
+        gas_price_wei,
+        gas_used,
+        gas_cost_wei
     FROM {{ ref('stg_worldchain__fills') }}
 ),
 
@@ -115,7 +130,10 @@ unichain_fills AS (
         output_token_symbol,
         input_amount,
         output_amount,
-        repayment_chain_id
+        repayment_chain_id,
+        gas_price_wei,
+        gas_used,
+        gas_cost_wei
     FROM {{ ref('stg_unichain__fills') }}
 ),
 
@@ -134,7 +152,10 @@ hyperevm_fills AS (
         output_token_symbol,
         input_amount,
         output_amount,
-        repayment_chain_id
+        repayment_chain_id,
+        gas_price_wei,
+        gas_used,
+        gas_cost_wei
     FROM {{ ref('stg_hyperevm__fills') }}
 ),
 
@@ -153,7 +174,10 @@ monad_fills AS (
         output_token_symbol,
         input_amount,
         output_amount,
-        repayment_chain_id
+        repayment_chain_id,
+        gas_price_wei,
+        gas_used,
+        gas_cost_wei
     FROM {{ ref('stg_monad__fills') }}
 ),
 
@@ -208,7 +232,11 @@ SELECT
     f.output_token_symbol AS fill_token_symbol,  -- Token symbol for the filled amount
     f.input_amount,
     f.output_amount,
-    f.repayment_chain_id
+    f.repayment_chain_id,
+    -- Gas data (for relayer cost analysis)
+    f.gas_price_wei,
+    f.gas_used,
+    f.gas_cost_wei
 FROM all_fills f
 LEFT JOIN chain_names oc ON f.origin_chain_id = oc.chain_id
 LEFT JOIN chain_names dc ON f.destination_chain_id = dc.chain_id
