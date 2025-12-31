@@ -170,7 +170,35 @@ hourly_fee_metrics AS (
         -- USE:  Market health assessment, relayer diversity monitoring.
         -- ========================================================================
         COUNT(DISTINCT depositor_address) AS unique_depositors,
-        COUNT(DISTINCT relayer_address) AS unique_relayers
+        COUNT(DISTINCT relayer_address) AS unique_relayers,
+        
+        -- ========================================================================
+        -- GAS COST METRICS (Relayer Cost Analysis)
+        -- ========================================================================
+        -- WHAT: Gas price and cost metrics for relayer fills
+        -- WHY:  Gas costs are incurred by RELAYERS on the destination chain.
+        --       High gas costs may:
+        --       - Reduce relayer profitability → fewer fillers → slower fills
+        --       - Force higher bridge fees to remain profitable
+        --       - Explain fee volatility on certain corridors
+        -- USE:  Relayer economics analysis, corridor cost comparison, fee justification.
+        -- ========================================================================
+        -- ========================================================================
+        -- Average gas price in Gwei (wei / 10^9)
+        ROUND((AVG(gas_price_wei) / 1e9)::NUMERIC, 4) AS avg_gas_price_gwei,
+        
+        -- Median gas price in Gwei (more robust than average)
+        ROUND(
+            (PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY gas_price_wei) / 1e9)::NUMERIC, 
+            4
+        ) AS median_gas_price_gwei,
+        
+        -- Total gas cost in native token (sum of all relayer gas costs)
+        -- NOTE: Different chains use different native tokens (ETH, MATIC, WLD, etc.)
+        ROUND((SUM(gas_cost_wei) / 1e18)::NUMERIC, 8) AS total_gas_cost_native,
+        
+        -- Average gas cost per fill in native token
+        ROUND((AVG(gas_cost_wei) / 1e18)::NUMERIC, 8) AS avg_gas_cost_native
         
     FROM base_data
     GROUP BY 
@@ -245,7 +273,29 @@ with_insights AS (
         --       Example: min=0.1%, max=1.0% → spread=0.9% (very inconsistent!)
         -- USE:  Fairness analysis, identify routes with extreme outliers.
         -- ========================================================================
-        ROUND((max_fee_pct - min_fee_pct)::NUMERIC, 4) AS fee_spread_pct
+        ROUND((max_fee_pct - min_fee_pct)::NUMERIC, 4) AS fee_spread_pct,
+        
+        -- ========================================================================
+        -- GAS COST TIER (Relayer Economics)
+        -- ========================================================================
+        -- WHAT: Classifies corridors by gas cost level
+        -- WHY:  High gas costs affect relayer profitability and may explain:
+        --       - Higher bridge fees on certain routes
+        --       - Fewer relayers willing to fill (leading to slower fills)
+        --       - Corridors that need optimization
+        --
+        -- THRESHOLDS (avg_gas_cost_native):
+        --   - HIGH:   > 0.01 native (~$25+ on ETH) → Expensive, may deter relayers
+        --   - MEDIUM: 0.001-0.01 native → Moderate, sustainable
+        --   - LOW:    < 0.001 native → Cheap, highly profitable for relayers
+        --
+        -- USE:  Corridor optimization, relayer incentive analysis.
+        -- ========================================================================
+        CASE 
+            WHEN avg_gas_cost_native > 0.01 THEN 'HIGH'
+            WHEN avg_gas_cost_native > 0.001 THEN 'MEDIUM'
+            ELSE 'LOW'
+        END AS gas_cost_tier
         
     FROM hourly_fee_metrics
 )
@@ -301,7 +351,14 @@ SELECT
     
     -- Participant metrics
     wi.unique_depositors,
-    wi.unique_relayers
+    wi.unique_relayers,
+    
+    -- Gas cost metrics (relayer economics)
+    wi.avg_gas_price_gwei,
+    wi.median_gas_price_gwei,
+    wi.total_gas_cost_native,
+    wi.avg_gas_cost_native,
+    wi.gas_cost_tier
 
 FROM with_insights wi
 LEFT JOIN chain_names oc ON wi.origin_chain_id = oc.chain_id

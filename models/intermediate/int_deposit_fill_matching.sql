@@ -45,6 +45,23 @@ token_prices AS (
     GROUP BY token_symbol, DATE_TRUNC('hour', timestamp::TIMESTAMP)
 ),
 
+-- Native token symbol per chain (for gas cost USD conversion)
+-- Gas fees are paid in the chain's native token
+native_tokens AS (
+    SELECT chain_id, native_token_symbol
+    FROM (
+        VALUES
+        (1, 'WETH'),       -- Ethereum: ETH (use WETH price)
+        (42161, 'WETH'),   -- Arbitrum: ETH
+        (137, 'MATIC'),    -- Polygon: MATIC
+        (59144, 'WETH'),   -- Linea: ETH
+        (480, 'WETH'),     -- Worldchain: ETH (WLD for app, but gas in ETH)
+        (130, 'WETH'),     -- Unichain: ETH
+        (999, 'WETH'),     -- HyperEVM: ETH
+        (143, 'WETH')      -- Monad: ETH (assumed)
+    ) AS nt(chain_id, native_token_symbol)
+),
+
 deposits AS (
     SELECT * FROM {{ ref('int_unified_deposits') }}
 ),
@@ -75,6 +92,11 @@ matched AS (
         f.output_token_address AS fill_token,
         f.output_amount AS actual_output_amount,
         f.repayment_chain_id,
+        
+        -- === GAS DATA (for relayer cost analysis) ===
+        f.gas_price_wei,
+        f.gas_used,
+        f.gas_cost_wei,
         
         -- === COMPUTED FIELDS ===
         -- Fill latency: How long did it take to fill? (in seconds)
@@ -159,6 +181,28 @@ SELECT
     m.bridge_fee_percent,
     m.slippage_percent,
     
+    -- Gas data (for relayer cost analysis)
+    -- These represent the cost incurred by the relayer on the destination chain
+    -- NOTE: Different chains use different native tokens (ETH, MATIC, WLD, etc.)
+    m.gas_price_wei,
+    m.gas_used,
+    m.gas_cost_wei,
+    -- Convert gas cost to native token units for readability (wei / 10^18)
+    ROUND((m.gas_cost_wei / 1e18)::NUMERIC, 8) AS gas_cost_native,
+    -- Gas cost in USD (using native token price at fill hour)
+    CASE 
+        WHEN m.gas_cost_wei IS NOT NULL 
+        THEN ROUND(((m.gas_cost_wei / 1e18) * COALESCE(np.price_usd, 0))::NUMERIC, 2)
+        ELSE NULL 
+    END AS gas_cost_usd,
+    
+    -- Bridge fee in USD (fee * deposit token price)
+    CASE 
+        WHEN m.bridge_fee_nominal IS NOT NULL 
+        THEN ROUND((m.bridge_fee_nominal * COALESCE(dp.price_usd, 1))::NUMERIC, 2)
+        ELSE NULL 
+    END AS bridge_fee_nominal_usd,
+    
     -- Route identifier (for aggregations)
     oc.chain_name || ' → ' || dc.chain_name AS route_name,
     m.origin_chain_id || '_' || m.destination_chain_id AS route_id
@@ -190,3 +234,11 @@ LEFT JOIN token_prices dp
 LEFT JOIN token_prices fp
     ON ft.token_symbol = fp.token_symbol
     AND DATE_TRUNC('hour', m.fill_timestamp) = fp.price_hour
+
+-- Join for native token symbol on destination chain (for gas cost USD)
+LEFT JOIN native_tokens nt ON m.destination_chain_id = nt.chain_id
+
+-- Join for native token price at fill hour (for gas cost USD)
+LEFT JOIN token_prices np
+    ON nt.native_token_symbol = np.token_symbol
+    AND DATE_TRUNC('hour', m.fill_timestamp) = np.price_hour
