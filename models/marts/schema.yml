@@ -1,0 +1,356 @@
+version: 2
+
+models:
+  # ==============================================
+  # GENERAL OVERVIEW MART - Protocol-wide metrics
+  # ==============================================
+  - name: mart_general_overview
+    description: |
+      High-level protocol overview for the main Superset dashboard.
+      GRAIN: Hour × Route × Token
+      Provides general metrics with drill-down capability for flexible Superset filtering.
+    
+    columns:
+      # TIME DIMENSION
+      - name: deposit_hour
+        description: "Hour-truncated deposit timestamp for aggregation"
+        tests:
+          - not_null
+
+      # ROUTE IDENTIFIERS
+      - name: origin_chain_id
+        description: "Chain ID where deposits originated"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 42161, 137, 59144, 480, 130, 999, 143]
+      
+      - name: origin_chain_name
+        description: "Human-readable origin chain name"
+      
+      - name: destination_chain_id
+        description: "Chain ID where funds are sent"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 42161, 137, 59144, 480, 130, 999, 143]
+      
+      - name: destination_chain_name
+        description: "Human-readable destination chain name"
+      
+      - name: route_id
+        description: "Route identifier: origin_chain_id || '_' || destination_chain_id"
+        tests:
+          - not_null
+      
+      - name: route_name
+        description: "Human-readable route name (e.g., 'Ethereum → Arbitrum')"
+
+      # TOKEN INFO
+      - name: deposit_token
+        description: "Token address on origin chain"
+        tests:
+          - not_null
+      
+      - name: token_symbol
+        description: "Original token symbol from metadata"
+      
+      - name: base_token_symbol
+        description: "Normalized token symbol (e.g., USDC.e → USDC)"
+
+      # VOLUME METRICS
+      - name: total_deposits
+        description: "Count of deposits in this hour-route-token"
+        tests:
+          - not_null
+      
+      - name: total_fills
+        description: "Count of filled deposits"
+        tests:
+          - not_null
+      
+      - name: total_deposit_volume_usd
+        description: "Total deposited amount in USD"
+      
+      - name: total_filled_volume_usd
+        description: "Total filled amount in USD"
+
+      # ACTIVITY METRICS
+      - name: unique_depositors
+        description: "Number of unique depositor addresses"
+        tests:
+          - not_null
+      
+      - name: unique_relayers
+        description: "Number of unique relayer addresses"
+
+      # PERFORMANCE SNAPSHOT
+      - name: fill_rate_pct
+        description: "Percentage of deposits that were filled (0-100)"
+      
+      - name: avg_fill_latency_seconds
+        description: "Average time from deposit to fill"
+      
+      - name: median_fill_latency_seconds
+        description: "Median time from deposit to fill"
+
+      # ECONOMIC SNAPSHOT
+      - name: avg_bridge_fee_pct
+        description: "Average bridge fee as percentage of deposit amount"
+      
+      - name: avg_slippage_pct
+        description: "Average slippage percentage"
+
+  # ==============================================
+  # FILL LATENCY ANALYSIS MART
+  # ==============================================
+  - name: mart_fill_latency_analysis
+    description: |
+      Analyzes Time-to-Fill (TTF) to identify filler hesitation and liquidity gaps.
+      GRAIN: Hour × Route × Token
+      KEY QUESTIONS: Which routes have filler hesitation? Is a new chain's filler infrastructure mature?
+    
+    columns:
+      # TIME DIMENSION
+      - name: deposit_hour
+        description: "Hour-truncated deposit timestamp for aggregation"
+        tests:
+          - not_null
+
+      # ROUTE IDENTIFIERS
+      - name: origin_chain_id
+        description: "Chain ID where deposits originated"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 42161, 137, 59144, 480, 130, 999, 143]
+      
+      - name: destination_chain_id
+        description: "Chain ID where funds are sent"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 42161, 137, 59144, 480, 130, 999, 143]
+      
+      - name: route_id
+        description: "Route identifier"
+        tests:
+          - not_null
+
+      # TOKEN INFO
+      - name: deposit_token
+        description: "Token address on origin chain"
+        tests:
+          - not_null
+
+      # VOLUME METRICS
+      - name: total_deposits
+        description: "Count of all deposits"
+        tests:
+          - not_null
+      
+      - name: total_fills
+        description: "Count of filled deposits"
+        tests:
+          - not_null
+      
+      - name: unfilled_count
+        description: "Count of unfilled deposits"
+        tests:
+          - not_null
+      
+      - name: fill_rate_pct
+        description: "Fill rate percentage (0-100)"
+
+      # LATENCY DISTRIBUTION
+      - name: avg_ttf_seconds
+        description: "Average time-to-fill in seconds"
+      
+      - name: median_ttf_seconds
+        description: "Median time-to-fill in seconds"
+      
+      - name: p95_ttf_seconds
+        description: "95th percentile time-to-fill - used for liquidity gap detection"
+
+      # SPEED BUCKET COUNTS
+      - name: instant_fill_count
+        description: "Fills completed in ≤30 seconds"
+        tests:
+          - not_null
+      
+      - name: fast_fill_count
+        description: "Fills completed in ≤60 seconds"
+        tests:
+          - not_null
+      
+      - name: slow_fill_count
+        description: "Fills taking >300 seconds (5 min) - filler hesitation indicator"
+        tests:
+          - not_null
+      
+      - name: very_slow_fill_count
+        description: "Fills taking >900 seconds (15 min) - critical delays"
+        tests:
+          - not_null
+
+      # SPEED BUCKET PERCENTAGES
+      - name: instant_fill_pct
+        description: "Percentage of instant fills (<= 30s)"
+      
+      - name: fast_fill_pct
+        description: "Percentage of fast fills (<= 60s)"
+      
+      - name: slow_fill_pct
+        description: "Percentage of slow fills (> 300s) - alert if > 10%"
+      
+      - name: very_slow_fill_pct
+        description: "Percentage of very slow fills (> 900s)"
+
+      # COMPUTED INSIGHTS
+      - name: liquidity_gap_status
+        description: "Categorical health label: CRITICAL, HIGH, MODERATE, or HEALTHY"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['CRITICAL', 'HIGH', 'MODERATE', 'HEALTHY']
+
+      # PARTICIPANT METRICS
+      - name: unique_relayers
+        description: "Number of unique relayers filling on this route"
+
+  # ==============================================
+  # BRIDGE FEE ANALYSIS MART
+  # ==============================================
+  - name: mart_bridge_fee_analysis
+    description: |
+      Analyzes bridge fees to identify over-priced corridors and inform pricing strategy.
+      GRAIN: Hour × Route × Token
+      KEY INSIGHT: bridge_fee_nominal = deposit_amount - actual_output_amount (includes all user costs)
+    
+    columns:
+      # TIME DIMENSION
+      - name: deposit_hour
+        description: "Hour-truncated deposit timestamp for aggregation"
+        tests:
+          - not_null
+
+      # ROUTE IDENTIFIERS
+      - name: origin_chain_id
+        description: "Chain ID where deposits originated"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 42161, 137, 59144, 480, 130, 999, 143]
+      
+      - name: destination_chain_id
+        description: "Chain ID where funds are sent"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 42161, 137, 59144, 480, 130, 999, 143]
+      
+      - name: route_id
+        description: "Route identifier"
+        tests:
+          - not_null
+
+      # TOKEN INFO
+      - name: deposit_token
+        description: "Token address on origin chain"
+        tests:
+          - not_null
+
+      # VOLUME METRICS
+      - name: total_fills
+        description: "Count of filled transactions"
+        tests:
+          - not_null
+      
+      - name: total_deposit_volume_usd
+        description: "Total deposited amount in USD"
+      
+      - name: total_filled_volume_usd
+        description: "Total filled amount in USD"
+
+      # FEE METRICS (USD)
+      - name: total_fees_usd
+        description: "Sum of all fees collected on this route in USD"
+      
+      - name: effective_fee_pct
+        description: "Volume-weighted average fee percentage - PRIMARY metric for corridor pricing"
+
+      # FEE DISTRIBUTION
+      - name: avg_fee_pct
+        description: "Simple average fee percentage"
+      
+      - name: median_fee_pct
+        description: "Median fee percentage - robust to outliers"
+      
+      - name: fee_std_dev
+        description: "Standard deviation of fee percentage - measures pricing volatility"
+      
+      - name: min_fee_pct
+        description: "Minimum fee percentage observed"
+      
+      - name: max_fee_pct
+        description: "Maximum fee percentage observed"
+      
+      - name: fee_spread_pct
+        description: "Range between max and min fee (max - min)"
+
+      # SLIPPAGE METRICS
+      - name: avg_slippage_pct
+        description: "Average slippage percentage (for transparency)"
+      
+      - name: median_slippage_pct
+        description: "Median slippage percentage"
+
+      # COMPUTED INSIGHTS
+      - name: pricing_tier
+        description: "Competitive position: OVERPRICED, HIGH, COMPETITIVE, AGGRESSIVE, or VERY_LOW"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['OVERPRICED', 'HIGH', 'COMPETITIVE', 'AGGRESSIVE', 'VERY_LOW']
+      
+      - name: fee_volatility_tier
+        description: "Fee stability: HIGH_VOLATILITY, MODERATE_VOLATILITY, LOW_VOLATILITY, or STABLE"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['HIGH_VOLATILITY', 'MODERATE_VOLATILITY', 'LOW_VOLATILITY', 'STABLE']
+
+      # PARTICIPANT METRICS
+      - name: unique_depositors
+        description: "Number of unique depositor addresses"
+        tests:
+          - not_null
+      
+      - name: unique_relayers
+        description: "Number of unique relayer addresses"
+
+      # GAS COST METRICS
+      - name: avg_gas_price_gwei
+        description: "Average gas price in Gwei"
+      
+      - name: median_gas_price_gwei
+        description: "Median gas price in Gwei"
+      
+      - name: total_gas_cost_native
+        description: "Total gas cost in native token units"
+      
+      - name: avg_gas_cost_native
+        description: "Average gas cost per fill in native token units"
+      
+      - name: total_gas_cost_usd
+        description: "Total gas cost in USD"
+      
+      - name: avg_gas_cost_usd
+        description: "Average gas cost per fill in USD"
+      
+      - name: gas_cost_tier
+        description: "Gas cost classification: VERY_HIGH, HIGH, MEDIUM, LOW, or VERY_LOW"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['VERY_HIGH', 'HIGH', 'MEDIUM', 'LOW', 'VERY_LOW']

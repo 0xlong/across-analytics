@@ -174,25 +174,26 @@ with_insights AS (
         -- ========================================================================
         -- LIQUIDITY GAP STATUS (Categorical Health Label)
         -- ========================================================================
-        -- WHAT: Classifies each route as HEALTHY / MODERATE / HIGH based on 
-        --       the 95th percentile TTF across all hourly observations for that route.
-        -- WHY:  Provides a simple filter in Superset: "Show me all HIGH gap routes"
+        -- WHAT: Classifies each hourly observation as CRITICAL / HIGH / MODERATE / HEALTHY 
+        --       based on the p95 TTF for that hour-route-token combination.
+        -- WHY:  Provides a simple filter in Superset: "Show me all CRITICAL gap routes"
         --       The p95 is used (not avg) because we care about WORST-CASE experience.
         -- 
-        -- THRESHOLDS:
-        --   - HEALTHY:  p95 ≤ 2 min  → Fillers are active, no issues
-        --   - MODERATE: p95 2-5 min  → Some hesitation, monitor closely
-        --   - HIGH:     p95 > 5 min  → Filler hesitation, needs intervention
+        -- DATA-DRIVEN THRESHOLDS (based on actual distribution from dataset):
+        --   Raw fill latencies (all users): median=8s, p75=15s, p95=42s
+        --   Route-level p95s: median=10.5s, p75=24s, p95=96s
+        --
+        --   - CRITICAL: > 100s  → Route's worst 5% is 2.5x slower than global worst 5%
+        --   - HIGH:     30-100s → Route's worst 5% exceeds global p95 (42s), investigate
+        --   - MODERATE: 15-30s  → Route's worst 5% is typical to slightly slow
+        --   - HEALTHY:  < 15s   → Route's worst 5% beats global p75 (15s), excellent UX
         --
         -- USE:  Superset filter, executive summary, filler incentive targeting.
         -- ========================================================================
         CASE 
-            WHEN PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY p95_ttf_seconds) 
-                 OVER (PARTITION BY origin_chain_id, destination_chain_id) > 300 
-            THEN 'HIGH'
-            WHEN PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY p95_ttf_seconds) 
-                 OVER (PARTITION BY origin_chain_id, destination_chain_id) > 120 
-            THEN 'MODERATE'
+            WHEN p95_ttf_seconds > 100 THEN 'CRITICAL'
+            WHEN p95_ttf_seconds > 30 THEN 'HIGH'
+            WHEN p95_ttf_seconds > 15 THEN 'MODERATE'
             ELSE 'HEALTHY'
         END AS liquidity_gap_status
         

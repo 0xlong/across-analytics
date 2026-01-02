@@ -58,7 +58,7 @@ native_tokens AS (
         (480, 'WETH'),     -- Worldchain: ETH (WLD for app, but gas in ETH)
         (130, 'WETH'),     -- Unichain: ETH
         (999, 'WETH'),     -- HyperEVM: ETH
-        (143, 'WETH')      -- Monad: ETH (assumed)
+        (143, 'MON')       -- Monad: MON (native token, not ETH!)
     ) AS nt(chain_id, native_token_symbol)
 ),
 
@@ -205,7 +205,32 @@ SELECT
     
     -- Route identifier (for aggregations)
     oc.chain_name || ' → ' || dc.chain_name AS route_name,
-    m.origin_chain_id || '_' || m.destination_chain_id AS route_id
+    m.origin_chain_id || '_' || m.destination_chain_id AS route_id,
+    
+    -- ========================================================================
+    -- LATENCY TIER (Fill-Level Speed Classification)
+    -- ========================================================================
+    -- WHAT: Classifies EACH individual fill's speed as CRITICAL / SLOW / MODERATE / FAST
+    -- WHY:  Enables drill-down analysis of specific slow transactions.
+    --       Complements the route-level liquidity_gap_status in mart_fill_latency_analysis.
+    --
+    -- DATA-DRIVEN THRESHOLDS (based on raw fill distribution from dataset):
+    --   Distribution: median=8s, p75=15s, p95=42s
+    --
+    --   - CRITICAL: > 100s → 2.5x slower than global p95, severe delay
+    --   - SLOW:     > 42s  → Exceeds global p95, investigate
+    --   - MODERATE: > 15s  → Exceeds global p75, slower than typical
+    --   - FAST:     ≤ 15s  → At or below p75, good UX
+    --
+    -- USE:  Incident investigation, outlier analysis, user experience audit.
+    -- ========================================================================
+    CASE 
+        WHEN m.is_filled = FALSE THEN NULL  -- Unfilled deposits have no latency tier
+        WHEN m.fill_latency_seconds > 100 THEN 'CRITICAL'
+        WHEN m.fill_latency_seconds > 42 THEN 'SLOW'
+        WHEN m.fill_latency_seconds > 15 THEN 'MODERATE'
+        ELSE 'FAST'
+    END AS latency_tier
 
 FROM matched m
 

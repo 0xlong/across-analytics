@@ -93,10 +93,9 @@ hourly_fee_metrics AS (
         -- USE:  Primary metric for corridor pricing comparison. Target: <0.3%.
         -- ========================================================================
         ROUND(
-            (SUM(bridge_fee_nominal * COALESCE(deposit_token_price_usd, 1)) / 
-             NULLIF(SUM(deposit_amount_usd), 0)) * 100,
-            4
-        ) AS effective_fee_pct,
+            ((SUM(bridge_fee_nominal * COALESCE(deposit_token_price_usd, 1)) / 
+             NULLIF(SUM(deposit_amount_usd), 0)) * 100)::NUMERIC, 4) 
+        AS effective_fee_pct,
         
         -- ========================================================================
         -- AVERAGE FEE PERCENTAGE
@@ -198,7 +197,21 @@ hourly_fee_metrics AS (
         ROUND((SUM(gas_cost_wei) / 1e18)::NUMERIC, 8) AS total_gas_cost_native,
         
         -- Average gas cost per fill in native token
-        ROUND((AVG(gas_cost_wei) / 1e18)::NUMERIC, 8) AS avg_gas_cost_native
+        ROUND((AVG(gas_cost_wei) / 1e18)::NUMERIC, 8) AS avg_gas_cost_native,
+        
+        -- ========================================================================
+        -- GAS COST IN USD (Cross-Chain Comparable)
+        -- ========================================================================
+        -- WHAT: Gas costs converted to USD using native token price at fill time
+        -- WHY:  Native token costs aren't comparable across chains (0.001 ETH ≠ 0.001 MATIC).
+        --       USD conversion enables:
+        --       - Cross-chain gas cost comparison
+        --       - Total relayer operational cost analysis
+        --       - Fee vs gas cost ratio calculations
+        -- USE:  Relayer profitability analysis, corridor cost benchmarking.
+        -- ========================================================================
+        ROUND(SUM(gas_cost_usd)::NUMERIC, 2) AS total_gas_cost_usd,
+        ROUND(AVG(gas_cost_usd)::NUMERIC, 4) AS avg_gas_cost_usd
         
     FROM base_data
     GROUP BY 
@@ -222,45 +235,53 @@ with_insights AS (
         -- ========================================================================
         -- PRICING TIER (Categorical Competitive Position)
         -- ========================================================================
-        -- WHAT: Classifies route as OVERPRICED / COMPETITIVE / AGGRESSIVE / VERY_LOW
+        -- WHAT: Classifies route as OVERPRICED / HIGH / COMPETITIVE / AGGRESSIVE / VERY_LOW
         -- WHY:  Enables quick identification of routes where Across may be
         --       losing users to competitors (OVERPRICED) or leaving money on
         --       the table (VERY_LOW).
         --
-        -- THRESHOLDS (effective_fee_pct):
-        --   - OVERPRICED:   > 0.5%  → Users likely comparing to cheaper bridges
-        --   - COMPETITIVE:  0.2-0.5% → Market rate, sustainable
-        --   - AGGRESSIVE:   0.1-0.2% → Undercutting competitors
-        --   - VERY_LOW:     < 0.1%  → Possibly subsidizing (intentional?)
+        -- DATA-DRIVEN THRESHOLDS (based on actual distribution from dataset):
+        --   Distribution: median=0.0135%, p75=0.056%, p95=0.37%, p99=2.15%
+        --
+        --   - OVERPRICED:   > 0.5%    → True outliers (~5% of data), investigate
+        --   - HIGH:         0.1-0.5%  → Above p75, higher than typical (~15%)
+        --   - COMPETITIVE:  0.02-0.1% → Around median, market rate (~30-40%)
+        --   - AGGRESSIVE:   0.005-0.02% → Below median, undercutting (~20-30%)
+        --   - VERY_LOW:     < 0.005%  → Near-zero fees, possibly subsidized (~15%)
         --
         -- USE:  Superset filter "Show OVERPRICED routes", pricing strategy review.
         -- ========================================================================
         CASE 
             WHEN effective_fee_pct > 0.5 THEN 'OVERPRICED'
-            WHEN effective_fee_pct > 0.2 THEN 'COMPETITIVE'
-            WHEN effective_fee_pct > 0.1 THEN 'AGGRESSIVE'
+            WHEN effective_fee_pct > 0.1 THEN 'HIGH'
+            WHEN effective_fee_pct > 0.02 THEN 'COMPETITIVE'
+            WHEN effective_fee_pct > 0.005 THEN 'AGGRESSIVE'
             ELSE 'VERY_LOW'
         END AS pricing_tier,
         
         -- ========================================================================
         -- FEE VOLATILITY TIER (Pricing Stability)
         -- ========================================================================
-        -- WHAT: Classifies fee consistency as HIGH_VOLATILITY / MODERATE / STABLE
+        -- WHAT: Classifies fee consistency as HIGH_VOLATILITY / MODERATE / LOW / STABLE
         -- WHY:  Users prefer predictable fees. High volatility indicates:
         --       - Dynamic pricing swings (may be correct but confusing)
         --       - Liquidity issues causing fee spikes
         --       - Inconsistent relayer behavior
         --
-        -- THRESHOLDS (fee_std_dev):
-        --   - HIGH_VOLATILITY:     > 0.5  → Fees vary wildly, investigate
-        --   - MODERATE_VOLATILITY: 0.2-0.5 → Some variation, monitor
-        --   - STABLE:              < 0.2  → Consistent pricing, good UX
+        -- DATA-DRIVEN THRESHOLDS (based on actual distribution from dataset):
+        --   Distribution: median=0.057, p75=0.36, p95=1.68, p99=8.28
+        --
+        --   - HIGH_VOLATILITY:     > 1.0   → True outliers (~10%), investigate
+        --   - MODERATE_VOLATILITY: 0.3-1.0 → Above p75, notable variation (~15-20%)
+        --   - LOW_VOLATILITY:      0.05-0.3 → Around median, acceptable (~40-50%)
+        --   - STABLE:              < 0.05  → Below median, consistent pricing (~25%)
         --
         -- USE:  Alert on HIGH_VOLATILITY routes, UX improvement targeting.
         -- ========================================================================
         CASE 
-            WHEN fee_std_dev > 0.5 THEN 'HIGH_VOLATILITY'
-            WHEN fee_std_dev > 0.2 THEN 'MODERATE_VOLATILITY'
+            WHEN fee_std_dev > 1.0 THEN 'HIGH_VOLATILITY'
+            WHEN fee_std_dev > 0.3 THEN 'MODERATE_VOLATILITY'
+            WHEN fee_std_dev > 0.05 THEN 'LOW_VOLATILITY'
             ELSE 'STABLE'
         END AS fee_volatility_tier,
         
@@ -284,17 +305,23 @@ with_insights AS (
         --       - Fewer relayers willing to fill (leading to slower fills)
         --       - Corridors that need optimization
         --
-        -- THRESHOLDS (avg_gas_cost_native):
-        --   - HIGH:   > 0.01 native (~$25+ on ETH) → Expensive, may deter relayers
-        --   - MEDIUM: 0.001-0.01 native → Moderate, sustainable
-        --   - LOW:    < 0.001 native → Cheap, highly profitable for relayers
+        -- DATA-DRIVEN THRESHOLDS (based on actual distribution from dataset):
+        --   Distribution: median=0.00001, p75=0.00016, p95=0.067, p99=0.19
+        --
+        --   - VERY_HIGH: > 0.05 native   → Top ~5%, expensive corridors
+        --   - HIGH:      0.001-0.05      → Above p75, notable cost (~10-15%)
+        --   - MEDIUM:    0.0001-0.001    → Around p75, moderate (~15-20%)
+        --   - LOW:       0.00001-0.0001  → Around median (~30-40%)
+        --   - VERY_LOW:  < 0.00001       → Below median, very cheap (~25%)
         --
         -- USE:  Corridor optimization, relayer incentive analysis.
         -- ========================================================================
         CASE 
-            WHEN avg_gas_cost_native > 0.01 THEN 'HIGH'
-            WHEN avg_gas_cost_native > 0.001 THEN 'MEDIUM'
-            ELSE 'LOW'
+            WHEN avg_gas_cost_native > 0.05 THEN 'VERY_HIGH'
+            WHEN avg_gas_cost_native > 0.001 THEN 'HIGH'
+            WHEN avg_gas_cost_native > 0.0001 THEN 'MEDIUM'
+            WHEN avg_gas_cost_native > 0.00001 THEN 'LOW'
+            ELSE 'VERY_LOW'
         END AS gas_cost_tier
         
     FROM hourly_fee_metrics
@@ -358,6 +385,8 @@ SELECT
     wi.median_gas_price_gwei,
     wi.total_gas_cost_native,
     wi.avg_gas_cost_native,
+    wi.total_gas_cost_usd,
+    wi.avg_gas_cost_usd,
     wi.gas_cost_tier
 
 FROM with_insights wi
