@@ -1,6 +1,6 @@
 -- mart_general_overview.sql
 -- PURPOSE: High-level protocol overview for the main Superset dashboard
--- GRAIN: Hour × Origin Chain × Destination Chain × Token
+-- GRAIN: Minute × Origin Chain × Destination Chain × Token
 -- WHY: Provides general metrics with drill-down capability for flexible Superset filtering
 
 {{ config(materialized='table') }}
@@ -8,7 +8,7 @@
 WITH base_data AS (
     SELECT
         *,
-        DATE_TRUNC('hour', deposit_timestamp) AS deposit_hour
+        DATE_TRUNC('minute', deposit_timestamp) AS deposit_minute
     FROM {{ ref('int_deposit_fill_matching') }}
 ),
 
@@ -37,7 +37,7 @@ token_metadata AS (
 -- Aggregate by hour, route, and token
 hourly_metrics AS (
     SELECT
-        deposit_hour,
+        deposit_minute,
         origin_chain_id,
         destination_chain_id,
         route_id,
@@ -80,7 +80,7 @@ hourly_metrics AS (
         
     FROM base_data
     GROUP BY 
-        deposit_hour,
+        deposit_minute,
         origin_chain_id,
         destination_chain_id,
         route_id,
@@ -89,7 +89,7 @@ hourly_metrics AS (
 
 SELECT
     -- Time dimension
-    hm.deposit_hour,
+    hm.deposit_minute,
     
     -- Route identifiers with human-readable names
     hm.origin_chain_id,
@@ -140,4 +140,4 @@ LEFT JOIN chain_names dc ON hm.destination_chain_id = dc.chain_id
 LEFT JOIN token_metadata tm ON hm.origin_chain_id = tm.chain_id 
     AND LOWER(hm.deposit_token) = LOWER(tm.token_address)
 
-ORDER BY hm.deposit_hour DESC, hm.total_deposit_volume_usd DESC
+ORDER BY hm.deposit_minute DESC, hm.total_deposit_volume_usd DESC

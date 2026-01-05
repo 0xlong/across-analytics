@@ -4,7 +4,7 @@
 -- PURPOSE: Analyze Time-to-Fill (TTF) to identify filler hesitation and 
 --          liquidity gaps across routes
 -- 
--- GRAIN: Hour × Route × Token
+-- GRAIN: Minute × Route × Token
 -- 
 -- KEY BUSINESS QUESTIONS:
 --   1. Which routes have "Filler Hesitation"? → slow_fill_pct > 10%
@@ -17,7 +17,7 @@
 WITH base_data AS (
     SELECT
         *,
-        DATE_TRUNC('hour', deposit_timestamp) AS deposit_hour
+        DATE_TRUNC('minute', deposit_timestamp) AS deposit_minute
     FROM {{ ref('int_deposit_fill_matching') }}
 ),
 
@@ -46,7 +46,7 @@ token_metadata AS (
 -- Aggregate by hour, route, and token
 hourly_latency_metrics AS (
     SELECT
-        deposit_hour,
+        deposit_minute,
         origin_chain_id,
         destination_chain_id,
         route_id,
@@ -101,7 +101,7 @@ hourly_latency_metrics AS (
         
     FROM base_data
     GROUP BY 
-        deposit_hour,
+        deposit_minute,
         origin_chain_id,
         destination_chain_id,
         route_id,
@@ -202,7 +202,7 @@ with_insights AS (
 
 SELECT
     -- Time dimension
-    wi.deposit_hour,
+    wi.deposit_minute,
     
     -- Route identifiers with human-readable names
     wi.origin_chain_id,
@@ -263,4 +263,4 @@ LEFT JOIN chain_names dc ON wi.destination_chain_id = dc.chain_id
 LEFT JOIN token_metadata tm ON wi.origin_chain_id = tm.chain_id 
     AND LOWER(wi.deposit_token) = LOWER(tm.token_address)
 
-ORDER BY wi.deposit_hour DESC, wi.total_deposit_volume_usd DESC
+ORDER BY wi.deposit_minute DESC, wi.total_deposit_volume_usd DESC

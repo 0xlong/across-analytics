@@ -52,29 +52,30 @@ TOKEN_TO_COINGECKO_ID = {
     
     # Chain native tokens
     "AVAX": "avalanche-2",
-    "POL": "matic-network",  # Polygon
+    "POL": "polygon-ecosystem-token",  # Polygon
     "BNB": "binancecoin",
     "HYPE": "hyperliquid",
-    "MONAD": "monad"
+    "MON": "monad"
 }
 
 
 # Hardcoded list of tokens to fetch prices for
 TOKENS_TO_FETCH = [
-    "USDC",
-    "USDT",
-    "DAI",
-    "WETH",
-    "ETH",
-    "WBTC",
-    "WLD",
-    "BAL",
-    "SNX",
-    "ACX",
-    "AVAX",
+    #"USDC",
+    #"USDT",
+    #"DAI",
+    #"WETH",
+    #"ETH",
+    #"WBTC",
+    #"WLD",
+    #"BAL",
+    ##"SNX",
+    #"ACX",
+    #"AVAX",
     "POL",
-    "BNB",
-    "HYPE",
+    #"BNB",
+    #"HYPE",
+    #"MON"
 ]
 
 

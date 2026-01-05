@@ -46,6 +46,11 @@ models:
   across_analytics:
     # Staging layer configuration
     # Staging models clean and standardize raw data from bronze layer
+    # Macros folder - contains reusable SQL functions
+    # Not a model folder, so we disable it from model compilation
+    macros:
+      "+enabled": false
+    
     staging:
       # Materialized as views by default - fast, no storage cost, always fresh
       # Views are virtual tables that run the SQL query each time they're accessed
@@ -54,11 +59,6 @@ models:
       # Apply these settings to all staging subdirectories (chains)
       # Each chain folder (ethereum, arbitrum, etc.) inherits these settings
       "+enabled": true
-      
-      # Macros folder - contains reusable SQL functions
-      # Not a model folder, so we exclude it from model compilation
-      macros:
-        "+enabled": false
     
     # Intermediate layer configuration (if you add this later)
     # Intermediate models combine staging models for business logic

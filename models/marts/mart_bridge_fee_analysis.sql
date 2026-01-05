@@ -4,7 +4,7 @@
 -- PURPOSE: Analyze bridge fees to identify over-priced corridors and 
 --          inform competitive pricing strategy
 -- 
--- GRAIN: Hour × Route × Token
+-- GRAIN: Minute × Route × Token
 -- 
 -- KEY INSIGHT: bridge_fee_nominal = deposit_amount - actual_output_amount
 --              This already includes ALL user costs: gas + relayer + bridge + slippage
@@ -20,7 +20,7 @@
 WITH base_data AS (
     SELECT
         *,
-        DATE_TRUNC('hour', deposit_timestamp) AS deposit_hour
+        DATE_TRUNC('minute', deposit_timestamp) AS deposit_minute
     FROM {{ ref('int_deposit_fill_matching') }}
     WHERE is_filled = TRUE  -- Only filled deposits have fee data
 ),
@@ -55,7 +55,7 @@ token_metadata AS (
 -- ============================================================================
 hourly_fee_metrics AS (
     SELECT
-        deposit_hour,
+        deposit_minute,
         origin_chain_id,
         destination_chain_id,
         route_id,
@@ -215,7 +215,7 @@ hourly_fee_metrics AS (
         
     FROM base_data
     GROUP BY 
-        deposit_hour,
+        deposit_minute,
         origin_chain_id,
         destination_chain_id,
         route_id,
@@ -329,7 +329,7 @@ with_insights AS (
 
 SELECT
     -- Time dimension
-    wi.deposit_hour,
+    wi.deposit_minute,
     
     -- Route identifiers with human-readable names
     wi.origin_chain_id,
@@ -395,4 +395,4 @@ LEFT JOIN chain_names dc ON wi.destination_chain_id = dc.chain_id
 LEFT JOIN token_metadata tm ON wi.origin_chain_id = tm.chain_id 
     AND LOWER(wi.deposit_token) = LOWER(tm.token_address)
 
-ORDER BY wi.deposit_hour DESC, wi.total_deposit_volume_usd DESC
+ORDER BY wi.deposit_minute DESC, wi.total_deposit_volume_usd DESC
