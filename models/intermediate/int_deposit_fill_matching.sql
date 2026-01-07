@@ -53,7 +53,7 @@ native_tokens AS (
         VALUES
         (1, 'WETH'),       -- Ethereum: ETH (use WETH price)
         (42161, 'WETH'),   -- Arbitrum: ETH
-        (137, 'MATIC'),    -- Polygon: MATIC
+        (137, 'POL'),      -- Polygon: POL (rebranded from MATIC)
         (59144, 'WETH'),   -- Linea: ETH
         (480, 'WETH'),     -- Worldchain: ETH (WLD for app, but gas in ETH)
         (130, 'WETH'),     -- Unichain: ETH
@@ -250,20 +250,20 @@ LEFT JOIN token_metadata ft
     ON m.destination_chain_id = ft.chain_id 
     AND LOWER(m.fill_token) = LOWER(ft.token_address)
 
--- Join for deposit token price at deposit hour
+-- Join for deposit token price at deposit hour (convert to UTC for matching)
 LEFT JOIN token_prices dp
     ON dt.token_symbol = dp.token_symbol
-    AND DATE_TRUNC('hour', m.deposit_timestamp) = dp.price_hour
+    AND DATE_TRUNC('hour', m.deposit_timestamp AT TIME ZONE 'UTC') = dp.price_hour
 
--- Join for fill token price at fill hour
+-- Join for fill token price at fill hour (convert to UTC for matching)
 LEFT JOIN token_prices fp
     ON ft.token_symbol = fp.token_symbol
-    AND DATE_TRUNC('hour', m.fill_timestamp) = fp.price_hour
+    AND DATE_TRUNC('hour', m.fill_timestamp AT TIME ZONE 'UTC') = fp.price_hour
 
 -- Join for native token symbol on destination chain (for gas cost USD)
 LEFT JOIN native_tokens nt ON m.destination_chain_id = nt.chain_id
 
--- Join for native token price at fill hour (for gas cost USD)
+-- Join for native token price at fill hour (convert to UTC for matching)
 LEFT JOIN token_prices np
     ON nt.native_token_symbol = np.token_symbol
-    AND DATE_TRUNC('hour', m.fill_timestamp) = np.price_hour
+    AND DATE_TRUNC('hour', m.fill_timestamp AT TIME ZONE 'UTC') = np.price_hour
