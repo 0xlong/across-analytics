@@ -89,11 +89,8 @@ def validate_parquet_file_before_loading_into_database(file_path: Path) -> Tuple
             return False, "funds_deposited_data_output_amount is negative"
         if (df["amount_to_return"] < 0).any():
             return False, "amount_to_return is negative"
-        if (df["refund_amounts"] < 0).any():
-            return False, "refund_amounts is negative"
-        if (df["refund_addresses"] < 0).any():
-            return False, "refund_addresses is negative"
-        if (df["refund_count"] < 0).any():
+        # refund_count is Int64, so check it separately
+        if (df["refund_count"].is_not_null() & (df["refund_count"] < 0)).any():
             return False, "refund_count is negative"
 
         # Check 7: Data types vs. expected types (at least high-level, e.g., amounts numeric-like, timestamps parseable).
@@ -107,12 +104,13 @@ def validate_parquet_file_before_loading_into_database(file_path: Path) -> Tuple
             return False, "funds_deposited_data_output_amount is not a float64"
         if df["amount_to_return"].is_not_null().any() and df["amount_to_return"].dtype != pl.Float64:
             return False, "amount_to_return is not a float64"
-        if df["refund_amounts"].is_not_null().any() and df["refund_amounts"].dtype != pl.Float64:
-            return False, "refund_amounts is not a float64"
-        if df["refund_addresses"].is_not_null().any() and df["refund_addresses"].dtype != pl.Float64:
-            return False, "refund_addresses is not a float64"
-        if df["refund_count"].is_not_null().any() and df["refund_count"].dtype != pl.Float64:
-            return False, "refund_count is not a float64"
+        # refund_amounts and refund_addresses are comma-separated strings (Utf8)
+        if df["refund_amounts"].is_not_null().any() and df["refund_amounts"].dtype != pl.Utf8:
+            return False, "refund_amounts is not a string (Utf8)"
+        if df["refund_addresses"].is_not_null().any() and df["refund_addresses"].dtype != pl.Utf8:
+            return False, "refund_addresses is not a string (Utf8)"
+        if df["refund_count"].is_not_null().any() and df["refund_count"].dtype != pl.Int64:
+            return False, "refund_count is not an Int64"
 
         # Check 8: Timestamps: parseable; not in scientific notation.
         if df["timestamp_datetime"].is_not_null().any() and df["timestamp_datetime"].dtype != pl.Datetime:

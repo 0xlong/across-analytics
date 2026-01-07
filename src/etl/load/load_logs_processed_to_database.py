@@ -102,6 +102,17 @@ def create_raw_table(conn, table_name: str) -> None:
     return table_name
 
 
+def truncate_raw_table(conn, table_name: str) -> None:
+    """
+    Remove all rows from a raw table (keeps table structure).
+    Use for full refresh strategy.
+    """
+    with conn.cursor() as cur:
+        cur.execute(f"TRUNCATE TABLE raw.{table_name};")
+    conn.commit()
+    print(f"Truncated raw.{table_name}")
+
+
 def load_parquet_to_raw_copy(conn, parquet_path: str, table_name: str) -> int:
     """
     COPY-based file loader: stream Parquet -> CSV -> Postgres COPY STDIN
@@ -275,25 +286,15 @@ def load_all_parquet_files_to_raw_tables(
             # Ensure the target table exists before loading.
             try:
                 create_raw_table(conn, table_name)
+                truncate_raw_table(conn, table_name)  # Always fresh load
                 print(f"Table raw.{table_name} ready for {parquet_file.name}")
             except Exception as e:
                 conn.rollback()  # keep connection usable for other files
                 print(f"Error preparing table {table_name} for {parquet_file.name}: {e}")
                 continue
 
-            # Skip already ingested files using the source_file guardrail.
+            # Load data (always fresh since we truncated)
             try:
-                status = check_table_loaded(
-                    conn,
-                    table_name,
-                    source_file=os.path.basename(parquet_file),
-                )
-                print(f"Table status for {parquet_file.name}: {status}")
-
-                if status.get("file_loaded"):
-                    print(f"File {parquet_file.name} already loaded into raw.{table_name}, skipping.")
-                    continue
-
                 inserted = load_parquet_to_raw_copy(conn, parquet_file, table_name)
                 print(f"Loaded {inserted} rows from {parquet_file} into raw.{table_name}")
                 total_inserted += inserted

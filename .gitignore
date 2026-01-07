@@ -100,6 +100,9 @@ data/cache/
 # temporary old files
 temp_old_files/
 
+# Project context
+project_context/
+
 # Temporary data files
 *.tmp
 *.temp

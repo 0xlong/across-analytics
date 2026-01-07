@@ -1,13 +1,5 @@
 """
 ETL Configuration
-==================
-Central config file for all ETL settings.
-Import this directly in your ETL scripts.
-
-Usage:
-    from src.config import ETL_CONFIG, PATHS, RUN_CONFIG
-    # or
-    from config import ETL_CONFIG, PATHS, RUN_CONFIG
 """
 
 import os
@@ -31,6 +23,7 @@ PATHS = {
     "seeds": PROJECT_ROOT / "data" / "seeds",
     "logs": PROJECT_ROOT / "logs",
     "chain_config": PROJECT_ROOT / "data" / "seeds" / "tokens_contracts_per_chain.json",
+    "prices": PROJECT_ROOT / "data" / "raw" / "prices",
 }
 
 # =============================================================================
@@ -55,9 +48,61 @@ ETL_CONFIG = {
 # =============================================================================
 
 RUN_CONFIG = {
-    "chains": ["ethereum", "arbitrum", "base", "polygon", "linea", "worldchain"],
-    "start_date": "2025-12-30",
+    "chains": ["ethereum", "arbitrum", "polygon", "linea", "worldchain", "hyperevm", "monad", "unichain"],
+    "start_date": "2026-01-05",
     "end_date": "2026-01-06",
+}
+
+# =============================================================================
+# TOKEN PRICES FROM COINGECKO EXTRACTION
+# =============================================================================
+
+TOKENS_PRICES = {
+    # CoinGecko ID mapping for each token symbol - these for Coingecko API mapping
+    "token_to_coingecko_id": {
+
+        # Stablecoins
+        "USDC": "usd-coin",
+        "USDT": "tether",
+        "DAI": "dai",
+        "USDH": "usd-coin",  # Hyperliquid USD
+        
+        # Major crypto
+        "WETH": "ethereum",
+        "ETH": "ethereum",
+        "WBTC": "bitcoin",
+        
+        # DeFi tokens
+        "WLD": "worldcoin-wld",
+        "BAL": "balancer",
+        "SNX": "havven",
+        "ACX": "across-protocol",
+        
+        # Chain native tokens
+        "AVAX": "avalanche-2",
+        "POL": "polygon-ecosystem-token",
+        "BNB": "binancecoin",
+        "HYPE": "hyperliquid",
+        "MON": "monad",
+    },
+    
+    # Choose tokens to get prices, usually not at one time cause of coingecko API rate limits 
+    "tokens_to_fetch": [
+        #"USDC",
+        #"USDT",
+        #"DAI",
+        #"WETH",
+        #"ETH",
+        #"WBTC",
+        #"WLD",
+        #"BAL",
+        #"ACX",
+        #"AVAX",
+        #"POL",
+        #"BNB",
+        #"HYPE",
+        "MON",
+    ],
 }
 
 # =============================================================================

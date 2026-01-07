@@ -57,7 +57,7 @@ SELECT
     c.input_amount_raw, c.output_amount_raw,
     c.repayment_chain_id, c.exclusive_relayer_address,
     c.depositor_address, c.recipient_address,
-    c.gas_price_wei, c.gas_used, (c.gas_price_wei * c.gas_used) AS gas_cost_wei
+    c.gas_price_wei, c.gas_used, (c.gas_price_wei::NUMERIC * c.gas_used) AS gas_cost_wei
 FROM cleaned_fills c
 LEFT JOIN input_token_meta AS input_tok
     ON c.input_token_address = input_tok.token_address AND c.origin_chain_id = input_tok.chain_id

@@ -16,30 +16,29 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from pathlib import Path
 import os
-from dotenv import load_dotenv
-load_dotenv()
+import sys
+
+# Add src to path for config import
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from config import PATHS, RUN_CONFIG, API_KEYS
 
 #import helper functions
 from extract_utils import get_block_by_timestamp_using_moralis as get_block_by_timestamp
 from extract_utils import save_logs_to_jsonl
 
-# project root directory (3 levels up from this script)
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+# Use paths from config
+PROJECT_ROOT = PATHS["project_root"]
 
-def get_chain_params(chain_name: str, json_path: str = os.path.join(PROJECT_ROOT, "data", "seeds", "tokens_contracts_per_chain.json")) -> Optional[Dict[str, Any]]:
+def get_chain_params(chain_name: str, json_path: Path = None) -> Optional[Dict[str, Any]]:
     """
     Retrieve all parameters for a specific blockchain chain from the tokens configuration file.
-    
     """
-    # Load the JSON configuration file
-    config_path = Path(json_path)
+    config_path = json_path or PATHS["chain_config"]
+    
     with open(config_path, 'r', encoding='utf-8') as file:
         chains_data = json.load(file)
     
-    # Convert the input chain_name to lowercase for case-insensitive matching
     chain_name_lower = chain_name.lower()
-    
-    # Retrieve the chain parameters using the lowercase key
     chain_params = chains_data.get(chain_name_lower)
     
     return chain_params
@@ -187,21 +186,14 @@ def extract_logs(
 
 
 # =============================================================================
-# CONFIGURATION - Edit these values as needed
+# CONFIGURATION - from config.py
 # =============================================================================
 
-# Your Infura API key (get one at https://infura.io)
-INFURA_API_KEY = os.getenv("INFURA_API_KEY")
+# API key from config
+INFURA_API_KEY = API_KEYS["infura"]
 
 # chains available for infura api
 chains_available_for_infura = ["base", "optimism", "polygon", "bsc", "zksync", "linea", "zora", "scroll", "blast", "mode", "redstone", "unichain", "worldchain", "mona"]
-
-# Infura endpoint for Arbitrum mainnet
-INFURA_URL = f"https://{chain_name}-mainnet.infura.io/v3/{INFURA_API_KEY}"
-
-# Date range for log extraction (format: YYYY-MM-DD)
-START_DATE = "2025-12-03"
-END_DATE = "2025-12-04"
 
 # =============================================================================
 # MAIN EXECUTION
@@ -210,58 +202,64 @@ END_DATE = "2025-12-04"
 def main():
     """
     Main function that orchestrates the log extraction process.
-    
-    Flow:
-    1. Validate API key
-    2. Convert date strings to Unix timestamps
-    3. Find corresponding block numbers using binary search
-    4. Extract logs in chunks from the block range
-    5. Save results to JSON files (raw + formatted versions)
+    Uses RUN_CONFIG from config.py for chains and date range.
     """
-    # configuration
-    chain_params = get_chain_params(chain_name)
+    global INFURA_URL  # Need to set this for make_rpc_call
+    
+    START_DATE = RUN_CONFIG["start_date"]
+    END_DATE = RUN_CONFIG["end_date"]
+    
+    for chain_name in RUN_CONFIG["chains"]:
+        # Skip chains not supported by Infura
+        if chain_name.lower() not in chains_available_for_infura:
+            print(f"⚠️ Skipping {chain_name} - not available in Infura API")
+            continue
+        
+        # Set INFURA_URL for this chain
+        INFURA_URL = f"https://{chain_name.lower()}-mainnet.infura.io/v3/{INFURA_API_KEY}"
+        
+        # Get chain configuration
+        chain_params = get_chain_params(chain_name)
+        if chain_params is None:
+            print(f"⚠️ Skipping {chain_name} - not found in config")
+            continue
+        
+        CONTRACT_ADDRESS = chain_params["spoke_pool_contract"]
+        event_topics = chain_params["topics"]
+        
+        print("=" * 60)
+        print(f"Across {chain_name} Spoke Pool - Log Extractor (Infura API)")
+        print("=" * 60)
+        
+        # Step 1: Convert dates to timestamps
+        print(f"\n📅 Date range: {START_DATE} to {END_DATE}")
+        start_timestamp = date_to_timestamp(START_DATE)
+        end_timestamp = date_to_timestamp(END_DATE)
+        
+        # Step 2: Find block numbers
+        print("\n🔍 Finding block numbers for date range...")
+        start_block = get_block_by_timestamp(start_timestamp, chain_name)
+        end_block = get_block_by_timestamp(end_timestamp, chain_name)
+        print(f"   Start block: {start_block}")
+        print(f"   End block: {end_block}")
+        
+        # Step 3: Extract logs in chunks
+        print(f"\n📥 Extracting logs from contract: {CONTRACT_ADDRESS}")
+        for topic in event_topics:
+            print(f"   Extracting topic: {topic}")
+            logs = extract_logs(
+                contract_address=CONTRACT_ADDRESS,
+                start_block=start_block,
+                end_block=end_block,
+                topics=[topic],
+                chunk_size=1000 
+            )
+            print(f"   Extracted {len(logs)} logs for topic: {topic}")
 
-    CHAIN_ID = chain_params["chain_id"]
-    CONTRACT_ADDRESS = chain_params["spoke_pool_contract"]
-    event_topics = chain_params["topics"]
-    print("event_topics: ", event_topics)
-    print("=" * 60)
-    print(f"Across {chain_name} Spoke Pool - Log Extractor (Infura API)")
-    print("=" * 60)
-    
-    
-    # Step 1: Convert dates to timestamps
-    print(f"\n📅 Date range: {START_DATE} to {END_DATE}")
-    start_timestamp = date_to_timestamp(START_DATE)
-    end_timestamp = date_to_timestamp(END_DATE)
-    print(f"   Start timestamp: {start_timestamp}")
-    print(f"   End timestamp: {end_timestamp}")
-    
-    # Step 2: Find block numbers using binary search
-    print("\n🔍 Finding block numbers for date range...")
-    start_block = get_block_by_timestamp(start_timestamp, chain_name)
-    end_block = get_block_by_timestamp(end_timestamp, chain_name)
-    print(f"   Start block: {start_block}")
-    print(f"   End block: {end_block}")
-    
-
-    # Step 4: Extract logs in chunks
-    print(f"\n📥 Extracting logs from contract: {CONTRACT_ADDRESS}")
-    for topic in event_topics:
-        print(f"   Extracting topic: {topic}")
-        logs = extract_logs(
-            contract_address=CONTRACT_ADDRESS,
-            start_block=start_block,
-            end_block=end_block,
-            topics=[topic],
-            chunk_size=1000 
-        )
-        print(f"   Extracted {len(logs)} logs for topic: {topic}")
-
-        # save logs to jsonl
-        output_file = f"{PROJECT_ROOT}/data/raw/infura_api/logs_{chain_name.lower()}_{START_DATE}_to_{END_DATE}.jsonl"
-        saved_logs = save_logs_to_jsonl(logs, output_file)
-        print(f"   Saved {saved_logs} logs to: {output_file}")
+            # save logs to jsonl
+            output_file = PATHS["raw_infura"] / f"logs_{chain_name.lower()}_{START_DATE}_to_{END_DATE}.jsonl"
+            saved_logs = save_logs_to_jsonl(logs, str(output_file))
+            print(f"   Saved {saved_logs} logs to: {output_file}")
 
 if __name__ == "__main__":
     main()

@@ -5,12 +5,17 @@ from eth_abi import decode as abi_decode, encode  # For decoding/encoding dynami
 import os
 import glob
 import json
+import sys
+
+# Add src to path for config import
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from config import PATHS
 
 #import helper functions
 from transform_utils import get_chain_params
 
-# Project root directory (3 levels up from this script)
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+# Use paths from config
+PROJECT_ROOT = PATHS["project_root"]
 
 
 def hex_to_int(hex_col: pl.Expr) -> pl.Expr:

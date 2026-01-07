@@ -13,30 +13,30 @@ import os
 from datetime import datetime
 from typing import Optional, Dict, Any
 from pathlib import Path
-from dotenv import load_dotenv
-load_dotenv()
+import sys
+
+# Add src to path for config import
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from config import PATHS, ETL_CONFIG, RUN_CONFIG, API_KEYS
 
 #import helper functions
 from extract_utils import save_logs_to_jsonl
 
-# project root directory (3 levels up from this script)
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+# Use paths from config
+PROJECT_ROOT = PATHS["project_root"]
 
 
-def get_chain_params(chain_name: str, json_path: str = os.path.join(PROJECT_ROOT, "data", "seeds", "tokens_contracts_per_chain.json")) -> Optional[Dict[str, Any]]:
+def get_chain_params(chain_name: str, json_path: Path = None) -> Optional[Dict[str, Any]]:
     """
     Retrieve all parameters for a specific blockchain chain from the tokens configuration file.
-    
     """
-    # Load the JSON configuration file
-    config_path = Path(json_path)
+    # Use config path if not specified
+    config_path = json_path or PATHS["chain_config"]
+    
     with open(config_path, 'r', encoding='utf-8') as file:
         chains_data = json.load(file)
     
-    # Convert the input chain_name to lowercase for case-insensitive matching
     chain_name_lower = chain_name.lower()
-    
-    # Retrieve the chain parameters using the lowercase key
     chain_params = chains_data.get(chain_name_lower)
     
     return chain_params
@@ -261,13 +261,13 @@ def airflow_extract_logs(chain_name: str, start_date: str, end_date: str) -> Dic
     CONTRACT_ADDRESS = chain_params["spoke_pool_contract"]
     event_topics = chain_params["topics"]
     
-    # API configuration (these could also be parameters if you want multi-API support)
-    API_URL = "https://api.etherscan.io/v2/api"
-    API_KEY = os.getenv("ETHERSCAN_API_KEY")
+    # API configuration from config
+    API_URL = ETL_CONFIG["etherscan_url"]
+    API_KEY = API_KEYS["etherscan"]
     
     # Validate API key exists
     if not API_KEY:
-        raise ValueError("ETHERSCAN_API_KEY environment variable not set")
+        raise ValueError("ETHERSCAN_API_KEY not set in .env")
     
     print(f"[Airflow] Starting extraction for {chain_name}")
     print(f"[Airflow] Date range: {start_date} to {end_date}")
@@ -298,12 +298,12 @@ def airflow_extract_logs(chain_name: str, start_date: str, end_date: str) -> Dic
     # - Memory holds only ONE topic's logs at a time
     # - File can be appended safely (no need to load existing content)
     
-    output_file = f"{PROJECT_ROOT}/data/raw/etherscan_api/logs_{str(chain_name).lower()}_{start_date}_to_{end_date}.jsonl"
+    output_file = PATHS["raw_data"] / f"logs_{str(chain_name).lower()}_{start_date}_to_{end_date}.jsonl"
     
     # Clear file if it exists (fresh extraction for this date range)
     # This prevents duplicate data if re-running the same extraction
-    if os.path.exists(output_file):
-        os.remove(output_file)
+    if output_file.exists():
+        output_file.unlink()
         print(f"[Airflow] Cleared existing file: {output_file}")
     
     # -------------------------------------------------------------------------
@@ -350,7 +350,7 @@ def airflow_extract_logs(chain_name: str, start_date: str, end_date: str) -> Dic
         "start_block": start_block,
         "end_block": end_block,
         "total_logs": total_logs,
-        "output_file": output_file,
+        "output_file": str(output_file),
         "format": "jsonl",  # Indicates file format for downstream tasks
         "status": "success"
     }
@@ -374,24 +374,20 @@ def main():
     
     Both use the SAME core logic, keeping code DRY (Don't Repeat Yourself).
     """
-
-    # -----------------------------------------------------------------------------
-    # User-defined configuration (edit these values to change extraction settings)
-    # -----------------------------------------------------------------------------
-    CHAIN_NAME = "monad"
-    START_DATE = "2025-12-03"
-    END_DATE = "2025-12-04"
-
-    # Simply delegate to the Airflow-compatible function
-    # Pass the global configuration values as parameters
-    result = airflow_extract_logs(
-        chain_name=CHAIN_NAME,
-        start_date=START_DATE,
-        end_date=END_DATE
-    )
-    
-    # Print the result summary (optional, for CLI feedback)
-    print(json.dumps(result, indent=2))
+    # Use run config from config.py
+    for chain in RUN_CONFIG["chains"]:
+        print(f"\n{'='*60}")
+        print(f"Extracting: {chain}")
+        print(f"{'='*60}")
+        
+        result = airflow_extract_logs(
+            chain_name=chain,
+            start_date=RUN_CONFIG["start_date"],
+            end_date=RUN_CONFIG["end_date"]
+        )
+        
+        # Print the result summary
+        print(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":

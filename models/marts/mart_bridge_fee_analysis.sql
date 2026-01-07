@@ -184,20 +184,22 @@ hourly_fee_metrics AS (
         -- ========================================================================
         -- ========================================================================
         -- Average gas price in Gwei (wei / 10^9)
-        ROUND((AVG(gas_price_wei) / 1e9)::NUMERIC, 4) AS avg_gas_price_gwei,
+        -- NOTE: Cast to NUMERIC before aggregation to prevent bigint overflow
+        ROUND((AVG(gas_price_wei::NUMERIC) / 1e9)::NUMERIC, 4) AS avg_gas_price_gwei,
         
         -- Median gas price in Gwei (more robust than average)
         ROUND(
-            (PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY gas_price_wei) / 1e9)::NUMERIC, 
+            (PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY gas_price_wei::NUMERIC) / 1e9)::NUMERIC, 
             4
         ) AS median_gas_price_gwei,
         
         -- Total gas cost in native token (sum of all relayer gas costs)
         -- NOTE: Different chains use different native tokens (ETH, MATIC, WLD, etc.)
-        ROUND((SUM(gas_cost_wei) / 1e18)::NUMERIC, 8) AS total_gas_cost_native,
+        -- NOTE: Cast to NUMERIC before aggregation to prevent bigint overflow
+        ROUND((SUM(gas_cost_wei::NUMERIC) / 1e18)::NUMERIC, 8) AS total_gas_cost_native,
         
         -- Average gas cost per fill in native token
-        ROUND((AVG(gas_cost_wei) / 1e18)::NUMERIC, 8) AS avg_gas_cost_native,
+        ROUND((AVG(gas_cost_wei::NUMERIC) / 1e18)::NUMERIC, 8) AS avg_gas_cost_native,
         
         -- ========================================================================
         -- GAS COST IN USD (Cross-Chain Comparable)

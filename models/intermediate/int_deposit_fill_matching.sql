@@ -8,7 +8,9 @@
 -- 3. We JOIN on deposit_id + origin/destination chain match
 -- 4. Unfilled deposits = rows with NULL fill (stuck capital)
 
-{{ config(materialized='view') }}
+{{ config(materialized='table') }}
+-- {{ config(materialized='table') }} for faster superset charts loading
+
 
 -- Chain ID to Name mapping for chains with parquet data
 WITH chain_names AS (

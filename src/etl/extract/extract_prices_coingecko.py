@@ -22,61 +22,23 @@ from pathlib import Path
 import requests
 import pandas as pd
 
+# Add src to path for config import
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from config import PATHS, RUN_CONFIG, TOKENS_PRICES
 
 # CoinGecko API base URL (free demo API)
 BASE_URL = "https://api.coingecko.com/api/v3"
 
-# Rate limit: Free tier is stricter - use 6 seconds to be safe
+# Rate limit: Free tier is stricter - use 3 seconds to be safe
 RATE_LIMIT_DELAY = 3
 MAX_RETRIES = 3
 
-# Map token symbols to CoinGecko IDs
-# Only unique tokens needed (same asset across chains = same price)
-TOKEN_TO_COINGECKO_ID = {
-    # Stablecoins (price ~1 USD, but still useful to track small deviations)
-    "USDC": "usd-coin",
-    "USDT": "tether",
-    "DAI": "dai",
-    "USDH": "usd-coin",  # Hyperliquid USD - map to USDC as proxy
-    
-    # Major crypto
-    "WETH": "ethereum",
-    "ETH": "ethereum",
-    "WBTC": "bitcoin",
-    
-    # DeFi tokens
-    "WLD": "worldcoin-wld",
-    "BAL": "balancer",
-    "SNX": "havven",
-    "ACX": "across-protocol",
-    
-    # Chain native tokens
-    "AVAX": "avalanche-2",
-    "POL": "polygon-ecosystem-token",  # Polygon
-    "BNB": "binancecoin",
-    "HYPE": "hyperliquid",
-    "MON": "monad"
-}
+# Token config from config.py
+TOKEN_TO_COINGECKO_ID = TOKENS_PRICES["token_to_coingecko_id"]
+TOKENS_TO_FETCH = TOKENS_PRICES["tokens_to_fetch"]
+MAX_RETRIES = 3
 
 
-# Hardcoded list of tokens to fetch prices for
-TOKENS_TO_FETCH = [
-    #"USDC",
-    #"USDT",
-    #"DAI",
-    #"WETH",
-    #"ETH",
-    #"WBTC",
-    #"WLD",
-    #"BAL",
-    ##"SNX",
-    #"ACX",
-    #"AVAX",
-    "POL",
-    #"BNB",
-    #"HYPE",
-    #"MON"
-]
 
 
 def date_to_unix(date_str: str) -> int:
@@ -217,13 +179,15 @@ def main():
     )
     parser.add_argument(
         "--start-date",
-        required=True,
-        help="Start date (YYYY-MM-DD)"
+        required=False,
+        default=None,
+        help="Start date (YYYY-MM-DD), defaults to RUN_CONFIG"
     )
     parser.add_argument(
         "--end-date",
-        required=True,
-        help="End date (YYYY-MM-DD)"
+        required=False,
+        default=None,
+        help="End date (YYYY-MM-DD), defaults to RUN_CONFIG"
     )
     parser.add_argument(
         "--output-dir",
@@ -233,16 +197,19 @@ def main():
     
     args = parser.parse_args()
     
-    # Default output directory
+    # Default output directory from config
     if args.output_dir is None:
-        project_root = Path(__file__).parent.parent.parent.parent
-        output_dir = project_root / "data" / "raw" / "prices"
+        output_dir = PATHS["prices"]
     else:
         output_dir = args.output_dir
     
+    # Use RUN_CONFIG dates if not specified
+    start_date = args.start_date or RUN_CONFIG["start_date"]
+    end_date = args.end_date or RUN_CONFIG["end_date"]
+    
     extract_all_prices(
-        start_date=args.start_date,
-        end_date=args.end_date,
+        start_date=start_date,
+        end_date=end_date,
         output_dir=str(output_dir),
     )
 

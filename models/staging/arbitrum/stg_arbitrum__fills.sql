@@ -202,7 +202,7 @@ SELECT
     -- Gas data (for relayer cost analysis)
     c.gas_price_wei,
     c.gas_used,
-    (c.gas_price_wei * c.gas_used) AS gas_cost_wei
+    (c.gas_price_wei::NUMERIC * c.gas_used) AS gas_cost_wei
     
 FROM cleaned_fills c
 
