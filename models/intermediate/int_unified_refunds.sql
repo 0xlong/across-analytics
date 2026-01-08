@@ -16,7 +16,7 @@ chain_names AS (
         VALUES
         (1, 'Ethereum'), (42161, 'Arbitrum'), (137, 'Polygon'),
         (59144, 'Linea'), (480, 'Worldchain'), (130, 'Unichain'),
-        (999, 'HyperEVM'), (143, 'Monad')
+        (999, 'HyperEVM'), (143, 'Monad'), (8453, 'Base'), (56, 'BSC'), (10, 'Optimism')
     ) AS chains(chain_id, chain_name)
 ),
 
@@ -149,6 +149,54 @@ monad_refunds AS (
     FROM {{ ref('stg_monad__refunds') }}
 ),
 
+base_refunds AS (
+    SELECT 
+        refund_timestamp,
+        transaction_hash,
+        chain_id,
+        root_bundle_id,
+        leaf_id,
+        LOWER(refund_token_address) AS refund_token_address,
+        total_refund_amount AS total_refund_amount_raw,
+        refund_addresses_string,
+        refund_amounts_string,
+        refund_count,
+        'base' AS source_blockchain
+    FROM {{ ref('stg_base__refunds') }}
+),
+
+bsc_refunds AS (
+    SELECT 
+        refund_timestamp,
+        transaction_hash,
+        chain_id,
+        root_bundle_id,
+        leaf_id,
+        LOWER(refund_token_address) AS refund_token_address,
+        total_refund_amount AS total_refund_amount_raw,
+        refund_addresses_string,
+        refund_amounts_string,
+        refund_count,
+        'bsc' AS source_blockchain
+    FROM {{ ref('stg_bsc__refunds') }}
+),
+
+optimism_refunds AS (
+    SELECT 
+        refund_timestamp,
+        transaction_hash,
+        chain_id,
+        root_bundle_id,
+        leaf_id,
+        LOWER(refund_token_address) AS refund_token_address,
+        total_refund_amount AS total_refund_amount_raw,
+        refund_addresses_string,
+        refund_amounts_string,
+        refund_count,
+        'optimism' AS source_blockchain
+    FROM {{ ref('stg_optimism__refunds') }}
+),
+
 -- UNION ALL: Stack all refunds from all chains
 all_refunds AS (
     SELECT * FROM arbitrum_refunds
@@ -166,6 +214,12 @@ all_refunds AS (
     SELECT * FROM hyperevm_refunds
     UNION ALL
     SELECT * FROM monad_refunds
+    UNION ALL
+    SELECT * FROM base_refunds
+    UNION ALL
+    SELECT * FROM bsc_refunds
+    UNION ALL
+    SELECT * FROM optimism_refunds
 )
 
 -- Final SELECT: Join with token metadata and convert amounts

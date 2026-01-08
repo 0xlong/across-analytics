@@ -149,8 +149,62 @@ monad_deposits AS (
     FROM {{ ref('stg_monad__deposits') }}
 ),
 
+base_deposits AS (
+    SELECT 
+        deposit_timestamp,
+        transaction_hash,
+        8453 AS origin_chain_id,  -- Base's chain ID
+        destination_chain_id,
+        deposit_id,
+        depositor_address,
+        recipient_address,
+        input_token_address,
+        input_token_symbol,
+        output_token_address,
+        output_token_symbol,
+        input_amount,
+        output_amount
+    FROM {{ ref('stg_base__deposits') }}
+),
+
+bsc_deposits AS (
+    SELECT 
+        deposit_timestamp,
+        transaction_hash,
+        56 AS origin_chain_id,  -- BSC's chain ID
+        destination_chain_id,
+        deposit_id,
+        depositor_address,
+        recipient_address,
+        input_token_address,
+        input_token_symbol,
+        output_token_address,
+        output_token_symbol,
+        input_amount,
+        output_amount
+    FROM {{ ref('stg_bsc__deposits') }}
+),
+
+optimism_deposits AS (
+    SELECT 
+        deposit_timestamp,
+        transaction_hash,
+        10 AS origin_chain_id,  -- Optimism's chain ID
+        destination_chain_id,
+        deposit_id,
+        depositor_address,
+        recipient_address,
+        input_token_address,
+        input_token_symbol,
+        output_token_address,
+        output_token_symbol,
+        input_amount,
+        output_amount
+    FROM {{ ref('stg_optimism__deposits') }}
+),
+
 -- Supported chain IDs (chains we have parquet data for)
--- 42161=Arbitrum, 1=Ethereum, 137=Polygon, 59144=Linea, 480=Worldchain, 130=Unichain, 999=HyperEVM, 143=Monad
+-- 42161=Arbitrum, 1=Ethereum, 137=Polygon, 59144=Linea, 480=Worldchain, 130=Unichain, 999=HyperEVM, 143=Monad, 8453=Base, 56=BSC, 10=Optimism
 
 -- Chain ID to Name mapping for chains with parquet data
 chain_names AS (
@@ -159,7 +213,7 @@ chain_names AS (
         VALUES
         (1, 'Ethereum'), (42161, 'Arbitrum'), (137, 'Polygon'),
         (59144, 'Linea'), (480, 'Worldchain'), (130, 'Unichain'),
-        (999, 'HyperEVM'), (143, 'Monad')
+        (999, 'HyperEVM'), (143, 'Monad'), (8453, 'Base'), (56, 'BSC'), (10, 'Optimism')
     ) AS chains(chain_id, chain_name)
 ),
 
@@ -176,21 +230,27 @@ token_prices AS (
 -- UNION ALL: Stack all deposits from all chains into one table
 -- Filter: Only include deposits where destination_chain_id is a supported chain
 all_deposits AS (
-    SELECT * FROM arbitrum_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM arbitrum_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
     UNION ALL
-    SELECT * FROM ethereum_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM ethereum_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
     UNION ALL
-    SELECT * FROM polygon_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM polygon_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
     UNION ALL
-    SELECT * FROM linea_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM linea_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
     UNION ALL
-    SELECT * FROM worldchain_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM worldchain_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
     UNION ALL
-    SELECT * FROM unichain_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM unichain_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
     UNION ALL
-    SELECT * FROM hyperevm_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM hyperevm_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
     UNION ALL
-    SELECT * FROM monad_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM monad_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
+    UNION ALL
+    SELECT * FROM base_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
+    UNION ALL
+    SELECT * FROM bsc_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
+    UNION ALL
+    SELECT * FROM optimism_deposits WHERE destination_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
 )
 
 -- Final SELECT with descriptive chain names and USD amounts

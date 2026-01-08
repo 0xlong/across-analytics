@@ -181,8 +181,74 @@ monad_fills AS (
     FROM {{ ref('stg_monad__fills') }}
 ),
 
+base_fills AS (
+    SELECT 
+        fill_timestamp,
+        transaction_hash,
+        origin_chain_id,
+        8453 AS destination_chain_id,  -- Fill happened ON Base
+        deposit_id,
+        relayer_address,
+        depositor_address,
+        recipient_address,
+        input_token_address,
+        output_token_address,
+        output_token_symbol,
+        input_amount,
+        output_amount,
+        repayment_chain_id,
+        gas_price_wei,
+        gas_used,
+        gas_cost_wei
+    FROM {{ ref('stg_base__fills') }}
+),
+
+bsc_fills AS (
+    SELECT 
+        fill_timestamp,
+        transaction_hash,
+        origin_chain_id,
+        56 AS destination_chain_id,  -- Fill happened ON BSC
+        deposit_id,
+        relayer_address,
+        depositor_address,
+        recipient_address,
+        input_token_address,
+        output_token_address,
+        output_token_symbol,
+        input_amount,
+        output_amount,
+        repayment_chain_id,
+        gas_price_wei,
+        gas_used,
+        gas_cost_wei
+    FROM {{ ref('stg_bsc__fills') }}
+),
+
+optimism_fills AS (
+    SELECT 
+        fill_timestamp,
+        transaction_hash,
+        origin_chain_id,
+        10 AS destination_chain_id,  -- Fill happened ON Optimism
+        deposit_id,
+        relayer_address,
+        depositor_address,
+        recipient_address,
+        input_token_address,
+        output_token_address,
+        output_token_symbol,
+        input_amount,
+        output_amount,
+        repayment_chain_id,
+        gas_price_wei,
+        gas_used,
+        gas_cost_wei
+    FROM {{ ref('stg_optimism__fills') }}
+),
+
 -- Supported chain IDs (chains we have parquet data for)
--- 42161=Arbitrum, 1=Ethereum, 137=Polygon, 59144=Linea, 480=Worldchain, 130=Unichain, 999=HyperEVM, 143=Monad
+-- 42161=Arbitrum, 1=Ethereum, 137=Polygon, 59144=Linea, 480=Worldchain, 130=Unichain, 999=HyperEVM, 143=Monad, 8453=Base, 56=BSC, 10=Optimism
 
 -- Chain ID to Name mapping for chains with parquet data
 chain_names AS (
@@ -191,7 +257,7 @@ chain_names AS (
         VALUES
         (1, 'Ethereum'), (42161, 'Arbitrum'), (137, 'Polygon'),
         (59144, 'Linea'), (480, 'Worldchain'), (130, 'Unichain'),
-        (999, 'HyperEVM'), (143, 'Monad')
+        (999, 'HyperEVM'), (143, 'Monad'), (8453, 'Base'), (56, 'BSC'), (10, 'Optimism')
     ) AS chains(chain_id, chain_name)
 ),
 
@@ -208,21 +274,27 @@ token_prices AS (
 -- UNION ALL: Stack all fills from all chains into one table
 -- Filter: Only include fills where origin_chain_id is a supported chain
 all_fills AS (
-    SELECT * FROM arbitrum_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM arbitrum_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
     UNION ALL
-    SELECT * FROM ethereum_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM ethereum_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
     UNION ALL
-    SELECT * FROM polygon_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM polygon_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
     UNION ALL
-    SELECT * FROM linea_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM linea_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
     UNION ALL
-    SELECT * FROM worldchain_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM worldchain_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
     UNION ALL
-    SELECT * FROM unichain_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM unichain_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
     UNION ALL
-    SELECT * FROM hyperevm_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM hyperevm_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
     UNION ALL
-    SELECT * FROM monad_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143)
+    SELECT * FROM monad_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
+    UNION ALL
+    SELECT * FROM base_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
+    UNION ALL
+    SELECT * FROM bsc_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
+    UNION ALL
+    SELECT * FROM optimism_fills WHERE origin_chain_id IN (42161, 1, 137, 59144, 480, 130, 999, 143, 8453, 56, 10)
 )
 
 -- Final SELECT with descriptive chain names and USD amounts
