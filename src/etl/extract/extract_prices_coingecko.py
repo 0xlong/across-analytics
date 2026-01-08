@@ -24,7 +24,7 @@ import pandas as pd
 
 # Add src to path for config import
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from config import PATHS, RUN_CONFIG, TOKENS_PRICES
+from config import PATHS, PRICE_DATE_RANGE, TOKENS_PRICES
 
 # CoinGecko API base URL (free demo API)
 BASE_URL = "https://api.coingecko.com/api/v3"
@@ -203,9 +203,9 @@ def main():
     else:
         output_dir = args.output_dir
     
-    # Use RUN_CONFIG dates if not specified
-    start_date = args.start_date or RUN_CONFIG["start_date"]
-    end_date = args.end_date or RUN_CONFIG["end_date"]
+    # Use PRICE_DATE_RANGE (starts 1 day before log extraction)
+    start_date = args.start_date or PRICE_DATE_RANGE["start_date"]
+    end_date = args.end_date or PRICE_DATE_RANGE["end_date"]
     
     extract_all_prices(
         start_date=start_date,

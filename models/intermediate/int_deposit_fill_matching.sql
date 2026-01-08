@@ -269,3 +269,9 @@ LEFT JOIN native_tokens nt ON m.destination_chain_id = nt.chain_id
 LEFT JOIN token_prices np
     ON nt.native_token_symbol = np.token_symbol
     AND DATE_TRUNC('hour', m.fill_timestamp AT TIME ZONE 'UTC') = np.price_hour
+
+-- Exclude tokens without price data (POOL on Ethereum, POL on Polygon)
+WHERE LOWER(m.deposit_token) NOT IN (
+    '0x25788a1a171ec66da6502f9975a15b609ff54cf6',  -- POL on Polygon
+    '0x0cec1a9154ff802e7934fc916ed7ca50bde6844e'   -- POOL on Ethereum
+)

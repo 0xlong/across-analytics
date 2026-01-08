@@ -48,9 +48,25 @@ ETL_CONFIG = {
 # =============================================================================
 
 RUN_CONFIG = {
-    "chains": ["ethereum", "arbitrum", "polygon", "linea", "worldchain", "hyperevm", "monad", "unichain"],
+    "chains": ["ethereum", 
+                "arbitrum", 
+                "polygon", 
+                "linea", 
+                "worldchain", 
+                "hyperevm", 
+                "monad", 
+                "unichain"],
+                
     "start_date": "2026-01-05",
     "end_date": "2026-01-06",
+}
+
+# Price extraction starts 1 day earlier to cover all deposit hours
+from datetime import datetime, timedelta
+_log_start = datetime.strptime(RUN_CONFIG["start_date"], "%Y-%m-%d")
+PRICE_DATE_RANGE = {
+    "start_date": (_log_start - timedelta(days=1)).strftime("%Y-%m-%d"),  # 1 day before logs
+    "end_date": RUN_CONFIG["end_date"],
 }
 
 # =============================================================================
@@ -65,7 +81,7 @@ TOKENS_PRICES = {
         "USDC": "usd-coin",
         "USDT": "tether",
         "DAI": "dai",
-        "USDH": "usd-coin",  # Hyperliquid USD
+        "USDH": "usdh-2",  # Hyperliquid USD on coingecko
         
         # Major crypto
         "WETH": "ethereum",
@@ -88,19 +104,20 @@ TOKENS_PRICES = {
     
     # Choose tokens to get prices, usually not at one time cause of coingecko API rate limits 
     "tokens_to_fetch": [
-        #"USDC",
-        #"USDT",
-        #"DAI",
-        #"WETH",
-        #"ETH",
-        #"WBTC",
-        #"WLD",
-        #"BAL",
-        #"ACX",
-        #"AVAX",
-        #"POL",
-        #"BNB",
-        #"HYPE",
+        "USDC",
+        "USDT",
+        "USDH",
+        "DAI",
+        "WETH",
+        "ETH",
+        "WBTC",
+        "WLD",
+        "BAL",
+        "ACX",
+        "AVAX",
+        "POL",
+        "BNB",
+        "HYPE",
         "MON",
     ],
 }
