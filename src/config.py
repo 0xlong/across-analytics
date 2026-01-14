@@ -18,7 +18,6 @@ PROJECT_ROOT = Path(__file__).parent.parent
 PATHS = {
     "project_root": PROJECT_ROOT,
     "raw_data": PROJECT_ROOT / "data" / "raw" / "etherscan_api",
-    "raw_infura": PROJECT_ROOT / "data" / "raw" / "infura_api",
     "processed_data": PROJECT_ROOT / "data" / "processed",
     "seeds": PROJECT_ROOT / "data" / "seeds",
     "logs": PROJECT_ROOT / "logs",
@@ -75,52 +74,25 @@ PRICE_DATE_RANGE = {
 # =============================================================================
 
 TOKENS_PRICES = {
-    # CoinGecko ID mapping for each token symbol - these for Coingecko API mapping
-    "token_to_coingecko_id": {
 
-        # Stablecoins
-        "USDC": "usd-coin",
-        "USDT": "tether",
-        "DAI": "dai",
-        "USDH": "usdh-2",  # Hyperliquid USD on coingecko
-        
-        # Major crypto
-        "WETH": "ethereum",
-        "ETH": "ethereum",
-        "WBTC": "bitcoin",
-        
-        # DeFi tokens
-        "WLD": "worldcoin-wld",
-        "BAL": "balancer",
-        "SNX": "havven",
-        "ACX": "across-protocol",
-        "CAKE":"pancakeswap-token",
-        
-        # Chain native tokens
-        "AVAX": "avalanche-2",
-        "POL": "polygon-ecosystem-token",
-        "BNB": "wbnb",
-        "HYPE": "hyperliquid",
-        "MON": "monad",
-    },
-    
     # Choose tokens to get prices, usually not at one time cause of coingecko API rate limits 
     "tokens_to_fetch": [
-        #"USDC",
-        #"USDT",
-        #"USDH",
-        #"DAI",
-        #"WETH",
-        #"ETH",
-        #"WBTC",
-        #"WLD",
-        #"BAL",
-        #"ACX",
-        #"AVAX",
-        #"POL",
-        "BNB", "CAKE"
-        #"HYPE",
-        #"MON",
+        "USDC",
+        "USDT",
+        "USDH",
+        "DAI",
+        "WETH",
+        "ETH",
+        "WBTC",
+        "WLD",
+        "BAL",
+        "ACX",
+        "AVAX",
+        "POL",
+        "BNB", 
+        "CAKE",
+        "HYPE",
+        "MON",
     ],
 }
 
