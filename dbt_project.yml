@@ -81,6 +81,8 @@ vars:
   # List of supported chains - makes it easy to add/remove chains
   supported_chains:
     - arbitrum
+    - bsc
+    - optimism
     - base
     - ethereum
     - hyperevm

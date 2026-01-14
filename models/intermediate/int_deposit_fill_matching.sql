@@ -27,7 +27,10 @@ WITH chain_names AS (
         (480, 'Worldchain'),
         (130, 'Unichain'),
         (999, 'HyperEVM'),
-        (143, 'Monad')
+        (143, 'Monad'),
+        (8453, 'Base'),
+        (56, 'BSC'),
+        (10, 'Optimism')
     ) AS chains(chain_id, chain_name)
 ),
 
@@ -60,7 +63,10 @@ native_tokens AS (
         (480, 'WETH'),     -- Worldchain: ETH (WLD for app, but gas in ETH)
         (130, 'WETH'),     -- Unichain: ETH
         (999, 'WETH'),     -- HyperEVM: ETH
-        (143, 'MON')       -- Monad: MON (native token, not ETH!)
+        (143, 'MON'),      -- Monad: MON (native token, not ETH!)
+        (8453, 'WETH'),    -- Base: ETH
+        (56, 'BNB'),       -- BSC: BNB (matches token_prices.csv)
+        (10, 'WETH')       -- Optimism: ETH
     ) AS nt(chain_id, native_token_symbol)
 ),
 
@@ -212,26 +218,26 @@ SELECT
     -- ========================================================================
     -- LATENCY TIER (Fill-Level Speed Classification)
     -- ========================================================================
-    -- WHAT: Classifies EACH individual fill's speed as CRITICAL / SLOW / MODERATE / FAST
+    -- WHAT: Classifies EACH individual fill's speed as CRITICAL / MODERATE / FAST / VERY_FAST
     -- WHY:  Enables drill-down analysis of specific slow transactions.
-    --       Complements the route-level liquidity_gap_status in mart_fill_latency_analysis.
     --
-    -- DATA-DRIVEN THRESHOLDS (based on raw fill distribution from dataset):
-    --   Distribution: median=8s, p75=15s, p95=42s
+    -- OBSERVED DISTRIBUTION (n=16,730 fills):
+    --   median=4s, p75=9s, p90=17s, p95=23s, p99=74s, max=4046s
     --
-    --   - CRITICAL: > 100s → 2.5x slower than global p95, severe delay
-    --   - SLOW:     > 42s  → Exceeds global p95, investigate
-    --   - MODERATE: > 15s  → Exceeds global p75, slower than typical
-    --   - FAST:     ≤ 15s  → At or below p75, good UX
+    -- THRESHOLDS (business-defined, informed by distribution):
+    --   - CRITICAL:  > 60s  → Severe delay (~1% of fills), requires investigation
+    --   - MODERATE:  > 30s  → Slower than expected (~3% of fills)
+    --   - FAST:      > 10s  → Acceptable speed (~15% of fills)
+    --   - VERY_FAST: ≤ 10s  → Excellent UX (~81% of fills, above p75)
     --
     -- USE:  Incident investigation, outlier analysis, user experience audit.
     -- ========================================================================
     CASE 
         WHEN m.is_filled = FALSE THEN NULL  -- Unfilled deposits have no latency tier
-        WHEN m.fill_latency_seconds > 100 THEN 'CRITICAL'
-        WHEN m.fill_latency_seconds > 42 THEN 'SLOW'
-        WHEN m.fill_latency_seconds > 15 THEN 'MODERATE'
-        ELSE 'FAST'
+        WHEN m.fill_latency_seconds > 60 THEN 'CRITICAL'
+        WHEN m.fill_latency_seconds > 30 THEN 'MODERATE'
+        WHEN m.fill_latency_seconds > 10 THEN 'FAST'
+        ELSE 'VERY_FAST'
     END AS latency_tier
 
 FROM matched m

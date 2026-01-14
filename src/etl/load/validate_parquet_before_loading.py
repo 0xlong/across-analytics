@@ -132,6 +132,17 @@ def validate_parquet_file_before_loading_into_database(file_path: Path) -> Tuple
         if df["refund_addresses"].is_not_null().any() and df["refund_addresses"].dtype != pl.Utf8:
             return False, "refund_addresses is not a string"
 
+        # Check 10: Gas data completeness - ensure no missing gasPrice/gasUsed for any log
+        total_logs = len(df)
+        gas_price_count = df["gas_price_wei"].is_not_null().sum()
+        gas_used_count = df["gas_used"].is_not_null().sum()
+        if gas_price_count != total_logs:
+            missing_count = total_logs - gas_price_count
+            return False, f"gas_price_wei has {missing_count} missing values out of {total_logs} logs"
+        if gas_used_count != total_logs:
+            missing_count = total_logs - gas_used_count
+            return False, f"gas_used has {missing_count} missing values out of {total_logs} logs"
+
         # All checks passed
         return True, None
         

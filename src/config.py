@@ -48,6 +48,7 @@ ETL_CONFIG = {
 # =============================================================================
 
 RUN_CONFIG = {
+    # these chains logs will be extracted using Etherscan - extract_data_from_etherscan.py
     "chains": ["ethereum", 
                 "arbitrum", 
                 "polygon", 
@@ -93,32 +94,33 @@ TOKENS_PRICES = {
         "BAL": "balancer",
         "SNX": "havven",
         "ACX": "across-protocol",
+        "CAKE":"pancakeswap-token",
         
         # Chain native tokens
         "AVAX": "avalanche-2",
         "POL": "polygon-ecosystem-token",
-        "BNB": "binancecoin",
+        "BNB": "wbnb",
         "HYPE": "hyperliquid",
         "MON": "monad",
     },
     
     # Choose tokens to get prices, usually not at one time cause of coingecko API rate limits 
     "tokens_to_fetch": [
-        "USDC",
-        "USDT",
-        "USDH",
-        "DAI",
-        "WETH",
-        "ETH",
-        "WBTC",
-        "WLD",
-        "BAL",
-        "ACX",
-        "AVAX",
-        "POL",
-        "BNB",
-        "HYPE",
-        "MON",
+        #"USDC",
+        #"USDT",
+        #"USDH",
+        #"DAI",
+        #"WETH",
+        #"ETH",
+        #"WBTC",
+        #"WLD",
+        #"BAL",
+        #"ACX",
+        #"AVAX",
+        #"POL",
+        "BNB", "CAKE"
+        #"HYPE",
+        #"MON",
     ],
 }
 
@@ -130,6 +132,7 @@ API_KEYS = {
     "etherscan": os.getenv("ETHERSCAN_API_KEY"),
     "infura": os.getenv("INFURA_API_KEY"),
     "moralis": os.getenv("MORALIS_API_KEY"),
+    "alchemy": os.getenv("ALCHEMY_API_KEY")
 }
 
 # =============================================================================

@@ -46,7 +46,7 @@
             "WETH": "0x2170ed0880ac9a755fd29b268895fb915429017e",
             "WBTC": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
             "DAI": "0x1af3f329e8be15407d87557c264ac58fa268fddc",
-            "BAL": null
+            "BNB": ""
         }
     },
     "polygon": {

@@ -6,32 +6,105 @@ Saves progress every 10 minutes to avoid data loss.
 """
 
 import os
+import sys
 import time
 import json
 import requests
 from datetime import datetime
 from dotenv import load_dotenv
 
+# Add project root to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+from src.config import RUN_CONFIG
+
 # Load environment variables
 load_dotenv()
 
+# ========================================
+# CHAIN SELECTION - Change this to switch chains
+# ========================================
+CHAIN = "bsc"  # Options: "base", "optimism", "bsc"
+
+# Date range from config
+START_DATE = RUN_CONFIG["start_date"]
+END_DATE = RUN_CONFIG["end_date"]
+
 # Configuration
 ALCHEMY_API_KEY = os.getenv("ALCHEMY_API_KEY")
-ALCHEMY_BASE_URL = f"https://base-mainnet.g.alchemy.com/v2/{ALCHEMY_API_KEY}"
-ALCHEMY_OPTIMISM_URL = f"https://opt-mainnet.g.alchemy.com/v2/{ALCHEMY_API_KEY}"
-ALCHEMY_BINANCE_URL = f"https://bnb-mainnet.g.alchemy.com/v2/{ALCHEMY_API_KEY}"
 
 # Load chain configuration from tokens_contracts_per_chain.json
 with open(os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "seeds", "tokens_contracts_per_chain.json")) as f:
     CHAIN_CONFIG = json.load(f)
 
-# Across Protocol SpokePool contracts (loaded from config)
-SPOKEPOOL_ADDRESS_BASE = CHAIN_CONFIG["base"]["spoke_pool_contract"]
-SPOKEPOOL_ADDRESS_OPTIMISM = CHAIN_CONFIG["optimism"]["spoke_pool_contract"]
-SPOKEPOOL_ADDRESS_BINANCE = CHAIN_CONFIG["bsc"]["spoke_pool_contract"]
 
-# Active SpokePool address (must match ACTIVE_RPC_URL chain)
-SPOKEPOOL_ADDRESS = SPOKEPOOL_ADDRESS_BINANCE
+def get_block_from_date(chain: str, date: str) -> int | None:
+    """
+    Fetch block number for a specific date using Moralis API.
+    
+    Args:
+        chain: Chain name (e.g., 'bsc', 'eth', 'polygon', 'base', 'optimism')
+        date: Date string in format 'YYYY-MM-DD' (e.g., '2026-01-05' from config)
+    
+    Returns:
+        Block number as integer, or None if request fails
+    """
+    moralis_api_key = os.getenv("MORALIS_API_KEY")
+    if not moralis_api_key:
+        print("❌ ERROR: MORALIS_API_KEY not found in .env file")
+        return None
+    
+    # Convert YYYY-MM-DD to URL-encoded format: YYYY-MM-DDTHH%3AMM%3ASSZ
+    date_encoded = f"{date}T00%3A00%3A00Z"
+    
+    url = f"https://deep-index.moralis.io/api/v2.2/dateToBlock?chain={chain}&date={date_encoded}"
+    
+    headers = {
+        "Accept": "application/json",
+        "X-API-Key": moralis_api_key
+    }
+    
+    response = requests.get(url, headers=headers, timeout=30)
+    
+    if response.status_code == 200:
+        result = response.json()
+        return result.get("block")
+    else:
+        print(f"❌ Moralis API Error: {response.status_code} - {response.text}")
+        return None
+
+# Chain-specific settings (RPC URL, spokepool address, block numbers fetched dynamically)
+CHAIN_SETTINGS = {
+    "base": {
+        "rpc_url": f"https://base-mainnet.g.alchemy.com/v2/{ALCHEMY_API_KEY}",
+        "spokepool_address": CHAIN_CONFIG["base"]["spoke_pool_contract"],
+        "moralis_chain": "base",
+    },
+    "optimism": {
+        "rpc_url": f"https://opt-mainnet.g.alchemy.com/v2/{ALCHEMY_API_KEY}",
+        "spokepool_address": CHAIN_CONFIG["optimism"]["spoke_pool_contract"],
+        "moralis_chain": "optimism",
+    },
+    "bsc": {
+        "rpc_url": f"https://bnb-mainnet.g.alchemy.com/v2/{ALCHEMY_API_KEY}",
+        "spokepool_address": CHAIN_CONFIG["bsc"]["spoke_pool_contract"],
+        "moralis_chain": "bsc",
+    }
+}
+
+# Apply chain-specific settings based on CHAIN flag
+ACTIVE_RPC_URL = CHAIN_SETTINGS[CHAIN]["rpc_url"]
+SPOKEPOOL_ADDRESS = CHAIN_SETTINGS[CHAIN]["spokepool_address"]
+MORALIS_CHAIN = CHAIN_SETTINGS[CHAIN]["moralis_chain"]
+
+# Fetch block numbers dynamically from Moralis API based on config dates
+print(f"Fetching block numbers for {CHAIN} from {START_DATE} to {END_DATE}...")
+FROM_BLOCK = get_block_from_date(MORALIS_CHAIN, START_DATE)
+TO_BLOCK = get_block_from_date(MORALIS_CHAIN, END_DATE)
+print(f"  FROM_BLOCK: {FROM_BLOCK}")
+print(f"  TO_BLOCK: {TO_BLOCK}")
+
+# Output filename uses dates from config
+OUTPUT_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "raw", "alchemy_api", f"logs_{CHAIN}_{START_DATE}_to_{END_DATE}.jsonl")
 
 # Event topics to fetch (FilledV3Relay, V3FundsDeposited, RequestedSpeedUpV3Deposit)
 EVENT_TOPICS = [
@@ -39,21 +112,11 @@ EVENT_TOPICS = [
     "0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208",
     "0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e"]
 
-# Optimism chain block numbers for 06-07.01.2026
-FROM_BLOCK = 74207093  # Approximate start of Jan 6, 2026 UTC
-TO_BLOCK = 74322271   # Approximate end of Jan 7, 2026 UTC
-
-# Active RPC URL (switch between chains)
-ACTIVE_RPC_URL = ALCHEMY_BINANCE_URL
-
 # Alchemy free tier limit - MUST be 10 for free tier!
 BLOCKS_PER_REQUEST = 10
 
 # Save interval in seconds (5 minutes)
 SAVE_INTERVAL_SECONDS = 300
-
-# Output file path
-OUTPUT_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "raw", "moralis_api", "binance_logs_jan6_7_2026.jsonl")
 
 # Create persistent session for connection pooling (reuses TCP/SSL connections)
 SESSION = requests.Session()
@@ -288,10 +351,14 @@ def extract_all_logs(from_block: int, to_block: int):
         raise
 
 
+
 if __name__ == "__main__":
+
+    
+
     print("\n" + "="*60)
-    print("Alchemy API - Optimism Mainnet Full Extraction")
-    print("Date range: January 6-7, 2026")
+    print(f"Alchemy API - {CHAIN.upper()} Mainnet Full Extraction")
+    print(f"Date range: {START_DATE} to {END_DATE}")
     print("="*60)
     
     # Extract all logs
