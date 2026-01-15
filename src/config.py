@@ -40,6 +40,7 @@ ETL_CONFIG = {
     
     # API URLs
     "etherscan_url": "https://api.etherscan.io/v2/api",
+    "moralis_url": "https://deep-index.moralis.io/api/v2.2",
 }
 
 # =============================================================================
@@ -105,6 +106,25 @@ API_KEYS = {
     "infura": os.getenv("INFURA_API_KEY"),
     "moralis": os.getenv("MORALIS_API_KEY"),
     "alchemy": os.getenv("ALCHEMY_API_KEY")
+}
+
+# =============================================================================
+# ALCHEMY CHAIN SETTINGS
+# =============================================================================
+
+CHAIN_SETTINGS = {
+    "base": {
+        "rpc_url": f"https://base-mainnet.g.alchemy.com/v2/{API_KEYS['alchemy']}",
+        "moralis_chain": "base",
+    },
+    "optimism": {
+        "rpc_url": f"https://opt-mainnet.g.alchemy.com/v2/{API_KEYS['alchemy']}",
+        "moralis_chain": "optimism",
+    },
+    "bsc": {
+        "rpc_url": f"https://bnb-mainnet.g.alchemy.com/v2/{API_KEYS['alchemy']}",
+        "moralis_chain": "bsc",
+    }
 }
 
 # =============================================================================

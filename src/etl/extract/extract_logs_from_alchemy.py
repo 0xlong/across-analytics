@@ -1,6 +1,5 @@
 """
-Alchemy API - Extract eth_getLogs for Optimism mainnet
-Fetches all logs for Across Protocol SpokePool for Jan 6-7, 2026.
+Alchemy API - Extract eth_getLogs for Optimism, Base, BSC mainnet
 NOTE: Free tier limits to 10 blocks per request - uses batching.
 Saves progress every 10 minutes to avoid data loss.
 """
@@ -15,7 +14,7 @@ from dotenv import load_dotenv
 
 # Add project root to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-from src.config import RUN_CONFIG
+from src.config import RUN_CONFIG, CHAIN_SETTINGS, ETL_CONFIG
 
 # Load environment variables
 load_dotenv()
@@ -56,7 +55,7 @@ def get_block_from_date(chain: str, date: str) -> int | None:
     # Convert YYYY-MM-DD to URL-encoded format: YYYY-MM-DDTHH%3AMM%3ASSZ
     date_encoded = f"{date}T00%3A00%3A00Z"
     
-    url = f"https://deep-index.moralis.io/api/v2.2/dateToBlock?chain={chain}&date={date_encoded}"
+    url = f"{ETL_CONFIG['moralis_url']}/dateToBlock?chain={chain}&date={date_encoded}"
     
     headers = {
         "Accept": "application/json",
@@ -72,28 +71,9 @@ def get_block_from_date(chain: str, date: str) -> int | None:
         print(f"❌ Moralis API Error: {response.status_code} - {response.text}")
         return None
 
-# Chain-specific settings (RPC URL, spokepool address, block numbers fetched dynamically)
-CHAIN_SETTINGS = {
-    "base": {
-        "rpc_url": f"https://base-mainnet.g.alchemy.com/v2/{ALCHEMY_API_KEY}",
-        "spokepool_address": CHAIN_CONFIG["base"]["spoke_pool_contract"],
-        "moralis_chain": "base",
-    },
-    "optimism": {
-        "rpc_url": f"https://opt-mainnet.g.alchemy.com/v2/{ALCHEMY_API_KEY}",
-        "spokepool_address": CHAIN_CONFIG["optimism"]["spoke_pool_contract"],
-        "moralis_chain": "optimism",
-    },
-    "bsc": {
-        "rpc_url": f"https://bnb-mainnet.g.alchemy.com/v2/{ALCHEMY_API_KEY}",
-        "spokepool_address": CHAIN_CONFIG["bsc"]["spoke_pool_contract"],
-        "moralis_chain": "bsc",
-    }
-}
-
 # Apply chain-specific settings based on CHAIN flag
 ACTIVE_RPC_URL = CHAIN_SETTINGS[CHAIN]["rpc_url"]
-SPOKEPOOL_ADDRESS = CHAIN_SETTINGS[CHAIN]["spokepool_address"]
+SPOKEPOOL_ADDRESS = CHAIN_CONFIG[CHAIN]["spoke_pool_contract"]
 MORALIS_CHAIN = CHAIN_SETTINGS[CHAIN]["moralis_chain"]
 
 # Fetch block numbers dynamically from Moralis API based on config dates
@@ -106,11 +86,8 @@ print(f"  TO_BLOCK: {TO_BLOCK}")
 # Output filename uses dates from config
 OUTPUT_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "raw", "alchemy_api", f"logs_{CHAIN}_{START_DATE}_to_{END_DATE}.jsonl")
 
-# Event topics to fetch (FilledV3Relay, V3FundsDeposited, RequestedSpeedUpV3Deposit)
-EVENT_TOPICS = [
-    "0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3",
-    "0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208",
-    "0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e"]
+# Event topics to fetch from chain config (FilledV3Relay, V3FundsDeposited, RequestedSpeedUpV3Deposit)
+EVENT_TOPICS = CHAIN_CONFIG[CHAIN]["topics"]
 
 # Alchemy free tier limit - MUST be 10 for free tier!
 BLOCKS_PER_REQUEST = 10
@@ -265,13 +242,13 @@ def extract_all_logs(from_block: int, to_block: int):
                 logs = result["result"]
                 all_logs.extend(logs)
                 logs_in_batch = len(logs)
+                
+                # Get timestamp from first log in batch (zero API cost!)
+                if logs_in_batch > 0:
+                    first_log_timestamp = int(logs[0].get('blockTimestamp', '0x0'), 16)
+                    last_timestamp = datetime.fromtimestamp(first_log_timestamp)
             
             batch_count += 1
-            
-            # Get timestamp every 50 batches or on first batch
-            if batch_count == 1 or batch_count % 50 == 0:
-                last_timestamp = get_block_timestamp(current)
-                time.sleep(0.03)  # Small delay for timestamp fetch
             
             # Print every batch with timestamp info
             elapsed = time.time() - start_time
@@ -292,7 +269,7 @@ def extract_all_logs(from_block: int, to_block: int):
                 all_logs = []  # Clear buffer after saving
             
             # Rate limiting
-            time.sleep(0.07) # allows for 500CU/s with some margin on ALchemy API
+            time.sleep(0.07) # allows for 500CU/s with some margin on Alchemy API
         
         # Final save
         if all_logs:
@@ -312,26 +289,12 @@ def extract_all_logs(from_block: int, to_block: int):
                 if line:
                     final_logs.append(json.loads(line))
         
+        # display final results
         if final_logs:
             print(f"\n📊 Final Results:")
             print(f"   First log block: {int(final_logs[0]['blockNumber'], 16):,}")
             print(f"   Last log block: {int(final_logs[-1]['blockNumber'], 16):,}")
             print(f"   Total logs: {len(final_logs):,}")
-            
-            # Count by topic
-            topic_counts = {}
-            for log in final_logs:
-                topic = log['topics'][0] if log['topics'] else 'unknown'
-                topic_counts[topic] = topic_counts.get(topic, 0) + 1
-            
-            print(f"\n   Logs by event:")
-            for topic, count in topic_counts.items():
-                event_name = {
-                    "0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3": "FilledV3Relay",
-                    "0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208": "V3FundsDeposited", 
-                    "0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e": "RequestedSpeedUpV3Deposit"
-                }.get(topic, topic[:20] + "...")
-                print(f"     {event_name}: {count:,}")
         
         return final_logs
         
@@ -353,8 +316,6 @@ def extract_all_logs(from_block: int, to_block: int):
 
 
 if __name__ == "__main__":
-
-    
 
     print("\n" + "="*60)
     print(f"Alchemy API - {CHAIN.upper()} Mainnet Full Extraction")
