@@ -185,6 +185,17 @@ def save_logs_to_jsonl(logs: list, filepath: str):
     return existing_count + new_count
 
 
+def print_batch_progress(batch_count: int, total_batches: int, current: int, batch_end: int, 
+                         logs_in_batch: int, total_logs: int, start_time: float, last_timestamp):
+    """Display progress information for current batch."""
+    elapsed = time.time() - start_time
+    pct = (batch_count / total_batches) * 100
+    eta = (elapsed / batch_count) * (total_batches - batch_count) / 60 if batch_count > 0 else 0
+    
+    date_str = last_timestamp.strftime("%Y-%m-%d %H:%M") if last_timestamp else "..."
+    print(f"  Batch {batch_count:,}/{total_batches:,} | Blocks {current:,}-{batch_end:,} | {date_str} | {logs_in_batch} logs | Total: {total_logs:,} | {pct:.1f}% | ETA: {eta:.1f}m")
+
+
 def extract_all_logs(from_block: int, to_block: int):
     """
     Extract ALL logs using batched requests (10 blocks per batch).
@@ -250,13 +261,9 @@ def extract_all_logs(from_block: int, to_block: int):
             
             batch_count += 1
             
-            # Print every batch with timestamp info
-            elapsed = time.time() - start_time
-            pct = (batch_count / total_batches) * 100
-            eta = (elapsed / batch_count) * (total_batches - batch_count) / 60 if batch_count > 0 else 0
-            
-            date_str = last_timestamp.strftime("%Y-%m-%d %H:%M") if last_timestamp else "..."
-            print(f"  Batch {batch_count:,}/{total_batches:,} | Blocks {current:,}-{batch_end:,} | {date_str} | {logs_in_batch} logs | Total: {len(all_logs):,} | {pct:.1f}% | ETA: {eta:.1f}m")
+            # Display progress
+            print_batch_progress(batch_count, total_batches, current, batch_end, 
+                               logs_in_batch, len(all_logs), start_time, last_timestamp)
             
             current = batch_end + 1
             
