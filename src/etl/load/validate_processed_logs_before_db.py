@@ -1,10 +1,19 @@
 import polars as pl
+import json
 from pathlib import Path
 from typing import Tuple, List, Optional
 from datetime import datetime
 
 # Project root directory (3 levels up from this script)
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+
+# Load chain config for chain ID validation
+CHAIN_CONFIG_PATH = PROJECT_ROOT / "data" / "seeds" / "tokens_contracts_per_chain.json"
+CHAIN_NAME_TO_ID = {}
+if CHAIN_CONFIG_PATH.exists():
+    with open(CHAIN_CONFIG_PATH, 'r') as f:
+        chain_config = json.load(f)
+        CHAIN_NAME_TO_ID = {name: data.get("chain_id") for name, data in chain_config.items() if data.get("chain_id")}
 
 
 def validate(file_path: Path) -> Tuple[bool, Optional[str], Optional[datetime], Optional[datetime], Optional[int]]:
@@ -174,6 +183,38 @@ def validate(file_path: Path) -> Tuple[bool, Optional[str], Optional[datetime], 
         if gas_used_count != total_logs:
             missing_count = total_logs - gas_used_count
             return False, f"gas_used has {missing_count} missing values out of {total_logs} logs", None, None, None
+
+        # Check 11: Future timestamps - no timestamps should be after current time
+        # Use timezone-naive datetime since parquet data is typically naive
+        from datetime import timezone as tz
+        current_time = datetime.now(tz.utc).replace(tzinfo=None)
+        future_timestamps = df.filter(
+            pl.col("timestamp_datetime").is_not_null() & 
+            (pl.col("timestamp_datetime") > current_time)
+        )
+        if not future_timestamps.is_empty():
+            future_count = len(future_timestamps)
+            max_future = future_timestamps.select(pl.col("timestamp_datetime").max()).item()
+            return False, f"Found {future_count} logs with future timestamps (max: {max_future})", None, None, None
+
+        # Check 12: Chain ID consistency - chain_id in data should match filename chain
+        # Extract chain name from filename: logs_<chain>_<date>_processed.parquet
+        filename = file_path.stem  # e.g., "logs_ethereum_2026-01-05_to_2026-01-06_processed"
+        parts = filename.split("_")
+        if len(parts) >= 2 and parts[0] == "logs":
+            chain_name = parts[1]  # e.g., "ethereum"
+            expected_chain_id = CHAIN_NAME_TO_ID.get(chain_name)
+            
+            if expected_chain_id and "chain_id" in df.columns:
+                # Check if chain_id column matches expected
+                mismatched = df.filter(
+                    pl.col("chain_id").is_not_null() & 
+                    (pl.col("chain_id") != expected_chain_id)
+                )
+                if not mismatched.is_empty():
+                    mismatch_count = len(mismatched)
+                    sample_ids = mismatched.select(pl.col("chain_id")).unique().to_series().to_list()[:5]
+                    return False, f"Chain ID mismatch: file is for {chain_name} (id={expected_chain_id}) but found {mismatch_count} logs with chain_id {sample_ids}", None, None, None
 
         # Get date range from timestamp_datetime column
         min_date, max_date = None, None
