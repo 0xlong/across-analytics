@@ -19,27 +19,13 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from config import PATHS, ETL_CONFIG, RUN_CONFIG, API_KEYS
 
-#import helper functions
-from extract_utils import save_logs_to_jsonl
-
 # Use paths from config
 PROJECT_ROOT = PATHS["project_root"]
 
+# Import helper functions from shared utils
+from extract_utils import save_logs_to_jsonl, get_chain_params, date_to_timestamp
 
-def get_chain_params(chain_name: str, json_path: Path = None) -> Optional[Dict[str, Any]]:
-    """
-    Retrieve all parameters for a specific blockchain chain from the tokens configuration file.
-    """
-    # Use config path if not specified
-    config_path = json_path or PATHS["chain_config"]
-    
-    with open(config_path, 'r', encoding='utf-8') as file:
-        chains_data = json.load(file)
-    
-    chain_name_lower = chain_name.lower()
-    chain_params = chains_data.get(chain_name_lower)
-    
-    return chain_params
+
 
 # =============================================================================
 # CORE FUNCTIONS
@@ -90,14 +76,7 @@ def api_call(params):
     return {"status": "0", "result": []}
 
 
-def date_to_timestamp(date_str):
-    """
-    Converts date string to Unix timestamp.
-    
-    Example: "2025-12-02" → 1733097600
-    """
-    dt = datetime.strptime(date_str, "%Y-%m-%d")
-    return int(dt.timestamp())
+
 
 
 def get_block_number(timestamp):

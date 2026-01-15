@@ -1,7 +1,9 @@
 """
-Alchemy API - Extract eth_getLogs for Optimism, Base, BSC mainnet
+Alchemy API - Extract eth_getLogs + Transaction Receipts (Gas Data)
+Combined extraction: fetches logs and enriches with gas data in a single run.
+
 NOTE: Free tier limits to 10 blocks per request - uses batching.
-Saves progress every 10 minutes to avoid data loss.
+Saves progress every 5 minutes to avoid data loss.
 """
 
 import os
@@ -11,10 +13,14 @@ import json
 import requests
 from datetime import datetime
 from dotenv import load_dotenv
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
-# Add project root to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from src.config import RUN_CONFIG, CHAIN_SETTINGS, ETL_CONFIG
+
+# Import helper functions from shared utils
+from extract_utils import get_block_from_date
 
 # Load environment variables
 load_dotenv()
@@ -32,75 +38,52 @@ END_DATE = RUN_CONFIG["end_date"]
 ALCHEMY_API_KEY = os.getenv("ALCHEMY_API_KEY")
 
 # Load chain configuration from tokens_contracts_per_chain.json
-with open(os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "seeds", "tokens_contracts_per_chain.json")) as f:
+PROJECT_ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "..")
+with open(os.path.join(PROJECT_ROOT, "data", "seeds", "tokens_contracts_per_chain.json")) as f:
     CHAIN_CONFIG = json.load(f)
 
-
-def get_block_from_date(chain: str, date: str) -> int | None:
-    """
-    Fetch block number for a specific date using Moralis API.
-    
-    Args:
-        chain: Chain name (e.g., 'bsc', 'eth', 'polygon', 'base', 'optimism')cls
-        date: Date string in format 'YYYY-MM-DD' (e.g., '2026-01-05' from config)
-    
-    Returns:
-        Block number as integer, or None if request fails
-    """
-    moralis_api_key = os.getenv("MORALIS_API_KEY")
-    if not moralis_api_key:
-        print("❌ ERROR: MORALIS_API_KEY not found in .env file")
-        return None
-    
-    # Convert YYYY-MM-DD to URL-encoded format: YYYY-MM-DDTHH%3AMM%3ASSZ
-    date_encoded = f"{date}T00%3A00%3A00Z"
-    
-    url = f"{ETL_CONFIG['moralis_url']}/dateToBlock?chain={chain}&date={date_encoded}"
-    
-    headers = {
-        "Accept": "application/json",
-        "X-API-Key": moralis_api_key
-    }
-    
-    response = requests.get(url, headers=headers, timeout=30)
-    
-    if response.status_code == 200:
-        result = response.json()
-        return result.get("block")
-    else:
-        print(f"❌ Moralis API Error: {response.status_code} - {response.text}")
-        return None
-
-# Apply chain-specific settings based on CHAIN flag
+# Apply chain-specific settings
 ACTIVE_RPC_URL = CHAIN_SETTINGS[CHAIN]["rpc_url"]
 SPOKEPOOL_ADDRESS = CHAIN_CONFIG[CHAIN]["spoke_pool_contract"]
 MORALIS_CHAIN = CHAIN_SETTINGS[CHAIN]["moralis_chain"]
-
-# Fetch block numbers dynamically from Moralis API based on config dates
-print(f"Fetching block numbers for {CHAIN} from {START_DATE} to {END_DATE}...")
-FROM_BLOCK = get_block_from_date(MORALIS_CHAIN, START_DATE)
-TO_BLOCK = get_block_from_date(MORALIS_CHAIN, END_DATE)
-print(f"  FROM_BLOCK: {FROM_BLOCK}")
-print(f"  TO_BLOCK: {TO_BLOCK}")
-
-# Output filename uses dates from config
-OUTPUT_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "raw", "alchemy_api", f"logs_{CHAIN}_{START_DATE}_to_{END_DATE}.jsonl")
-
-# Event topics to fetch from chain config (FilledV3Relay, V3FundsDeposited, RequestedSpeedUpV3Deposit)
 EVENT_TOPICS = CHAIN_CONFIG[CHAIN]["topics"]
 
 # Alchemy free tier limit - MUST be 10 for free tier!
 BLOCKS_PER_REQUEST = 10
 
+# Receipt batch size (Alchemy supports up to 100)
+RECEIPT_BATCH_SIZE = 50
+
 # Save interval in seconds (5 minutes)
 SAVE_INTERVAL_SECONDS = 300
 
-# Create persistent session for connection pooling (reuses TCP/SSL connections)
-SESSION = requests.Session()
-SESSION.headers.update({"Content-Type": "application/json"})
+# Output file (final enriched output)
+OUTPUT_FILE = os.path.join(PROJECT_ROOT, "data", "raw", "etherscan_api", f"logs_{CHAIN}_{START_DATE}_to_{END_DATE}.jsonl")
 
 
-def get_current_block():
+def create_session() -> requests.Session:
+    """Create a requests session with retry logic and connection pooling."""
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=0.5,
+        status_forcelist=[429, 500, 502, 503, 504],
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=10)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    session.headers.update({"Content-Type": "application/json"})
+    return session
+
+
+# Create persistent session for all API calls
+SESSION = create_session()
+
+
+
+
+
+def get_current_block() -> int | None:
     """Fetch current block number."""
     response = SESSION.post(
         ACTIVE_RPC_URL,
@@ -111,26 +94,7 @@ def get_current_block():
     return int(result["result"], 16) if "result" in result else None
 
 
-def get_block_timestamp(block_number: int):
-    """Fetch timestamp for a specific block."""
-    response = SESSION.post(
-        ACTIVE_RPC_URL,
-        json={
-            "jsonrpc": "2.0", 
-            "method": "eth_getBlockByNumber", 
-            "params": [hex(block_number), False], 
-            "id": 1
-        },
-        timeout=30
-    )
-    result = response.json()
-    if "result" in result and result["result"]:
-        timestamp = int(result["result"]["timestamp"], 16)
-        return datetime.fromtimestamp(timestamp)
-    return None
-
-
-def fetch_logs_batch(from_block: int, to_block: int):
+def fetch_logs_batch(from_block: int, to_block: int) -> dict:
     """Fetch logs for a single batch (max 10 blocks on free tier)."""
     payload = {
         "jsonrpc": "2.0",
@@ -139,36 +103,133 @@ def fetch_logs_batch(from_block: int, to_block: int):
             "fromBlock": hex(from_block),
             "toBlock": hex(to_block),
             "address": SPOKEPOOL_ADDRESS,
-            "topics": [EVENT_TOPICS]  # Array of topics = OR condition
+            "topics": [EVENT_TOPICS]
         }],
         "id": 1
     }
     
-    response = SESSION.post(
-        ACTIVE_RPC_URL,
-        json=payload,
-        timeout=30
-    )
+    response = SESSION.post(ACTIVE_RPC_URL, json=payload, timeout=30)
     return response.json()
 
 
-def save_logs_to_jsonl(logs: list, filepath: str):
-    """Save logs to JSONL file (append mode - one JSON object per line)."""
+def fetch_receipt_batch(tx_hashes: list, max_retries: int = 5) -> dict:
+    """
+    Fetch multiple transaction receipts in a single batch RPC call.
+    Returns dict mapping tx_hash -> receipt data.
+    """
+    payload = [
+        {"jsonrpc": "2.0", "id": idx, "method": "eth_getTransactionReceipt", "params": [tx_hash]}
+        for idx, tx_hash in enumerate(tx_hashes)
+    ]
+    
+    for attempt in range(max_retries):
+        try:
+            response = SESSION.post(ACTIVE_RPC_URL, json=payload, timeout=30)
+            
+            if response.status_code == 429:
+                wait_time = 2 ** attempt
+                print(f"  Rate limited (429). Waiting {wait_time}s before retry {attempt + 1}/{max_retries}...")
+                time.sleep(wait_time)
+                continue
+            
+            response.raise_for_status()
+            results = response.json()
+            
+            if isinstance(results, dict) and results.get("error", {}).get("code") == 429:
+                wait_time = 2 ** attempt
+                print(f"  Rate limited (response). Waiting {wait_time}s before retry...")
+                time.sleep(wait_time)
+                continue
+            
+            receipts = {}
+            for r in results:
+                if "result" in r and r["result"]:
+                    receipt = r["result"]
+                    receipts[receipt["transactionHash"]] = {
+                        "gasUsed": receipt.get("gasUsed"),
+                        "effectiveGasPrice": receipt.get("effectiveGasPrice"),
+                        "gasPrice": receipt.get("gasPrice"),
+                        "status": receipt.get("status"),
+                    }
+            return receipts
+                
+        except Exception as e:
+            print(f"Error fetching receipt batch: {e}")
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt
+                time.sleep(wait_time)
+            else:
+                return {}
+    
+    return {}
+
+
+def fetch_all_receipts(logs: list) -> dict:
+    """Fetch all transaction receipts for the given logs using batched RPC calls."""
+    # Extract unique transaction hashes
+    tx_hashes = list({log["transactionHash"] for log in logs})
+    
+    if not tx_hashes:
+        return {}
+    
+    print(f"\n📥 Fetching gas data for {len(tx_hashes)} unique transactions...")
+    
+    all_receipts = {}
+    total_batches = (len(tx_hashes) + RECEIPT_BATCH_SIZE - 1) // RECEIPT_BATCH_SIZE
+    
+    for i in range(0, len(tx_hashes), RECEIPT_BATCH_SIZE):
+        batch_num = i // RECEIPT_BATCH_SIZE + 1
+        batch = tx_hashes[i:i + RECEIPT_BATCH_SIZE]
+        receipts = fetch_receipt_batch(batch)
+        all_receipts.update(receipts)
+        print(f"  Receipt batch {batch_num}/{total_batches} | Got {len(receipts)} receipts")
+        time.sleep(0.5)  # Rate limiting between batches
+    
+    print(f"✅ Fetched {len(all_receipts)} transaction receipts")
+    return all_receipts
+
+
+def enrich_logs_with_gas(logs: list, receipts: dict) -> list:
+    """Merge gas data from receipts into logs."""
+    enriched = []
+    enriched_count = 0
+    
+    for log in logs:
+        tx_hash = log["transactionHash"]
+        
+        # Rename blockTimestamp -> timeStamp to match Etherscan format
+        if "blockTimestamp" in log:
+            log["timeStamp"] = log.pop("blockTimestamp")
+        
+        # Remove 'removed' field to match Etherscan format
+        log.pop("removed", None)
+        
+        # Add gas data if available
+        if tx_hash in receipts:
+            log["gasUsed"] = receipts[tx_hash].get("gasUsed")
+            log["gasPrice"] = receipts[tx_hash].get("effectiveGasPrice") or receipts[tx_hash].get("gasPrice")
+            enriched_count += 1
+        
+        enriched.append(log)
+    
+    print(f"✅ Enriched {enriched_count}/{len(logs)} logs with gas data")
+    return enriched
+
+
+def save_logs_to_jsonl(logs: list, filepath: str) -> int:
+    """Save logs to JSONL file with deduplication."""
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     
-    # Load existing logs if file exists (for deduplication)
+    # Load existing logs for deduplication
     existing_keys = set()
-    existing_count = 0
     if os.path.exists(filepath):
         try:
             with open(filepath, 'r') as f:
                 for line in f:
-                    line = line.strip()
-                    if line:
+                    if line.strip():
                         log = json.loads(line)
                         key = f"{log.get('transactionHash', '')}-{log.get('logIndex', '')}"
                         existing_keys.add(key)
-                        existing_count += 1
         except (json.JSONDecodeError, FileNotFoundError):
             pass
     
@@ -182,7 +243,7 @@ def save_logs_to_jsonl(logs: list, filepath: str):
                 f.write(json.dumps(log) + '\n')
                 new_count += 1
     
-    return existing_count + new_count
+    return len(existing_keys)
 
 
 def print_batch_progress(batch_count: int, total_batches: int, current: int, batch_end: int, 
@@ -193,16 +254,16 @@ def print_batch_progress(batch_count: int, total_batches: int, current: int, bat
     eta = (elapsed / batch_count) * (total_batches - batch_count) / 60 if batch_count > 0 else 0
     
     date_str = last_timestamp.strftime("%Y-%m-%d %H:%M") if last_timestamp else "..."
-    print(f"  Batch {batch_count:,}/{total_batches:,} | Blocks {current:}-{batch_end:} | {date_str} | {logs_in_batch} logs | Total: {total_logs:,} | {pct:.1f}% | ETA: {eta:.1f}m")
+    print(f"  Batch {batch_count:,}/{total_batches:,} | Blocks {current}-{batch_end} | {date_str} | {logs_in_batch} logs | Total: {total_logs:,} | {pct:.1f}% | ETA: {eta:.1f}m")
 
 
-def extract_all_logs(from_block: int, to_block: int):
+def extract_and_enrich(from_block: int, to_block: int):
     """
-    Extract ALL logs using batched requests (10 blocks per batch).
-    Saves progress every 10 minutes.
+    Main extraction pipeline: fetch logs and enrich with gas data.
+    Saves progress every 5 minutes.
     """
     print(f"\n{'='*60}")
-    print("Alchemy API - Full Log Extraction")
+    print("Alchemy API - Log Extraction + Gas Enrichment")
     print(f"{'='*60}")
     
     if not ALCHEMY_API_KEY:
@@ -210,6 +271,7 @@ def extract_all_logs(from_block: int, to_block: int):
         return []
     
     print(f"\n✓ API Key loaded: {ALCHEMY_API_KEY[:8]}...{ALCHEMY_API_KEY[-4:]}")
+    print(f"✓ Chain: {CHAIN.upper()}")
     print(f"✓ Target contract: {SPOKEPOOL_ADDRESS}")
     print(f"✓ Block range: {from_block:,} to {to_block:,}")
     
@@ -226,7 +288,7 @@ def extract_all_logs(from_block: int, to_block: int):
         print(f"✓ Current chain block: {current_block:,}")
     
     print(f"\n{'='*60}")
-    print("Extracting all logs...")
+    print("Phase 1: Extracting logs...")
     print(f"{'='*60}\n")
     
     all_logs = []
@@ -254,33 +316,39 @@ def extract_all_logs(from_block: int, to_block: int):
                 all_logs.extend(logs)
                 logs_in_batch = len(logs)
                 
-                # Get timestamp from first log in batch (zero API cost!)
                 if logs_in_batch > 0:
                     first_log_timestamp = int(logs[0].get('blockTimestamp', '0x0'), 16)
                     last_timestamp = datetime.fromtimestamp(first_log_timestamp)
             
             batch_count += 1
             
-            # Display progress
             print_batch_progress(batch_count, total_batches, current, batch_end, 
                                logs_in_batch, len(all_logs), start_time, last_timestamp)
             
             current = batch_end + 1
             
-            # Save every 10 minutes
+            # Save checkpoint every 5 minutes
             if time.time() - last_save_time >= SAVE_INTERVAL_SECONDS:
-                total_saved = save_logs_to_jsonl(all_logs, OUTPUT_FILE)
-                print(f"\n💾 AUTO-SAVE: {total_saved:,} total logs saved to file")
+                print(f"\n💾 CHECKPOINT: Processing {len(all_logs)} logs...")
+                receipts = fetch_all_receipts(all_logs)
+                enriched = enrich_logs_with_gas(all_logs, receipts)
+                total_saved = save_logs_to_jsonl(enriched, OUTPUT_FILE)
+                print(f"💾 Saved {total_saved:,} total logs to file")
                 print(f"   Continuing extraction...\n")
                 last_save_time = time.time()
                 all_logs = []  # Clear buffer after saving
             
-            # Rate limiting
-            time.sleep(0.07) # allows for 500CU/s with some margin on Alchemy API
+            time.sleep(0.07)  # Rate limiting
         
-        # Final save
+        # Final processing
         if all_logs:
-            total_saved = save_logs_to_jsonl(all_logs, OUTPUT_FILE)
+            print(f"\n{'='*60}")
+            print("Phase 2: Fetching gas data...")
+            print(f"{'='*60}")
+            
+            receipts = fetch_all_receipts(all_logs)
+            enriched = enrich_logs_with_gas(all_logs, receipts)
+            total_saved = save_logs_to_jsonl(enriched, OUTPUT_FILE)
             print(f"\n💾 FINAL SAVE: {total_saved:,} total logs saved")
         
         elapsed = time.time() - start_time
@@ -288,50 +356,62 @@ def extract_all_logs(from_block: int, to_block: int):
         print(f"✅ COMPLETE! Extraction finished in {elapsed/60:.1f} minutes")
         print(f"{'='*60}")
         
-        # Load final count from file (JSONL format)
+        # Load and display final count
         final_logs = []
         with open(OUTPUT_FILE, 'r') as f:
             for line in f:
-                line = line.strip()
-                if line:
+                if line.strip():
                     final_logs.append(json.loads(line))
         
-        # display final results
         if final_logs:
             print(f"\n📊 Final Results:")
             print(f"   First log block: {int(final_logs[0]['blockNumber'], 16):,}")
             print(f"   Last log block: {int(final_logs[-1]['blockNumber'], 16):,}")
             print(f"   Total logs: {len(final_logs):,}")
+            
+            # Count logs with gas data
+            with_gas = sum(1 for log in final_logs if log.get("gasUsed"))
+            print(f"   Logs with gas data: {with_gas:,}")
         
         return final_logs
         
     except requests.exceptions.RequestException as e:
         print(f"\n❌ Request failed: {e}")
-        # Save whatever we have on error
         if all_logs:
-            total_saved = save_logs_to_jsonl(all_logs, OUTPUT_FILE)
+            receipts = fetch_all_receipts(all_logs)
+            enriched = enrich_logs_with_gas(all_logs, receipts)
+            total_saved = save_logs_to_jsonl(enriched, OUTPUT_FILE)
             print(f"💾 EMERGENCY SAVE: {total_saved:,} logs saved before error")
         return []
     except KeyboardInterrupt:
         print(f"\n\n⚠️ Interrupted by user!")
-        # Save on Ctrl+C
         if all_logs:
-            total_saved = save_logs_to_jsonl(all_logs, OUTPUT_FILE)
+            receipts = fetch_all_receipts(all_logs)
+            enriched = enrich_logs_with_gas(all_logs, receipts)
+            total_saved = save_logs_to_jsonl(enriched, OUTPUT_FILE)
             print(f"💾 INTERRUPT SAVE: {total_saved:,} logs saved")
         raise
 
 
-
 if __name__ == "__main__":
-
     print("\n" + "="*60)
-    print(f"Alchemy API - {CHAIN.upper()} Mainnet Full Extraction")
+    print(f"Alchemy API - {CHAIN.upper()} Mainnet Extraction + Gas Enrichment")
     print(f"Date range: {START_DATE} to {END_DATE}")
     print("="*60)
     
-    # Extract all logs
-    logs = extract_all_logs(FROM_BLOCK, TO_BLOCK)
+    # Fetch block numbers from Moralis API
+    print(f"\nFetching block numbers for {CHAIN} from {START_DATE} to {END_DATE}...")
+    FROM_BLOCK = get_block_from_date(MORALIS_CHAIN, START_DATE)
+    TO_BLOCK = get_block_from_date(MORALIS_CHAIN, END_DATE)
+    print(f"  FROM_BLOCK: {FROM_BLOCK}")
+    print(f"  TO_BLOCK: {TO_BLOCK}")
     
-    print(f"\n{'='*60}")
-    print("Extraction complete!")
-    print(f"{'='*60}\n")
+    if FROM_BLOCK and TO_BLOCK:
+        # Run combined extraction
+        logs = extract_and_enrich(FROM_BLOCK, TO_BLOCK)
+        
+        print(f"\n{'='*60}")
+        print("Extraction complete!")
+        print(f"{'='*60}\n")
+    else:
+        print("❌ Failed to get block numbers from Moralis API")
