@@ -1,5 +1,4 @@
 # dbt_project.yml - Main configuration file for Across Analytics dbt project
-# This file tells dbt everything about your project: name, paths, models, and settings
 
 name: 'across_analytics'
 version: '1.0.0'
