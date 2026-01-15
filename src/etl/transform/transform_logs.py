@@ -6,16 +6,31 @@ import os
 import glob
 import json
 import sys
+from typing import Optional, Dict, Any
 
 # Add src to path for config import
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from config import PATHS
 
-#import helper functions
-from transform_utils import get_chain_params
-
 # Use paths from config
 PROJECT_ROOT = PATHS["project_root"]
+
+
+def get_chain_params(chain_name: str, json_path: str = os.path.join(PROJECT_ROOT, "data", "seeds", "tokens_contracts_per_chain.json")) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve all parameters for a specific blockchain chain from the tokens configuration file.
+    """
+    config_path = Path(json_path)
+    with open(config_path, 'r', encoding='utf-8') as file:
+        chains_data = json.load(file)
+    
+    # Convert the input chain_name to lowercase for case-insensitive matching
+    chain_name_lower = chain_name.lower()
+    
+    # Retrieve the chain parameters using the lowercase key
+    chain_params = chains_data.get(chain_name_lower)
+    
+    return chain_params
 
 
 def hex_to_int(hex_col: pl.Expr) -> pl.Expr:
@@ -454,7 +469,8 @@ def decode_data(
 def transform_data(
     chain: str,
     start_date: str,
-    end_date: str
+    end_date: str,
+    input_file: Path = None
 ) -> pl.DataFrame:
     """
     Transform raw event logs into structured, typed columns.
@@ -467,6 +483,7 @@ def transform_data(
         chain: Blockchain name (e.g., "ethereum", "polygon", "arbitrum")
         start_date: Start date in YYYY-MM-DD format (e.g., "2025-12-03")
         end_date: End date in YYYY-MM-DD format (e.g., "2025-12-04")
+        input_file: Optional path to input file. If not provided, defaults to etherscan_api path.
     
     Returns:
         Polars DataFrame with transformed event log data
@@ -483,8 +500,11 @@ def transform_data(
     """
     time_start = time.time()
     
-    # Construct file paths from parameters using PROJECT_ROOT constant
-    input_file = PROJECT_ROOT / f"data/raw/etherscan_api/logs_{chain}_{start_date}_to_{end_date}.jsonl"
+    # Use provided input file or default to etherscan_api path
+    if input_file is None:
+        input_file = PROJECT_ROOT / f"data/raw/etherscan_api/logs_{chain}_{start_date}_to_{end_date}.jsonl"
+    
+    # Output always goes to processed folder (unified output)
     output_file = PROJECT_ROOT / f"data/processed/logs_{chain}_{start_date}_to_{end_date}_processed.parquet"
     
     # Load chain-specific event signatures (topic0 hashes)
@@ -635,11 +655,18 @@ def transform_data(
 
 if __name__ == "__main__":
 
-    # list all the files to be processed from the data/raw/etherscan_api directory
-    files = glob.glob(os.path.join(PROJECT_ROOT, "data", "raw", "etherscan_api", "*.jsonl"))
+    # Collect files from BOTH data sources (etherscan_api and alchemy_api)
+    etherscan_files = glob.glob(os.path.join(PROJECT_ROOT, "data", "raw", "etherscan_api", "*.jsonl"))
+    alchemy_files = glob.glob(os.path.join(PROJECT_ROOT, "data", "raw", "alchemy_api", "*.jsonl"))
+    
+    all_files = etherscan_files + alchemy_files
+    
+    print(f"Found {len(etherscan_files)} files from etherscan_api")
+    print(f"Found {len(alchemy_files)} files from alchemy_api")
+    print(f"Total files to process: {len(all_files)}")
 
-    # define the chain, start_date, and end_date
-    for file in files:
+    # Process each file
+    for file in all_files:
 
         # print file name to be processed
         print("\n"+file)
@@ -650,8 +677,8 @@ if __name__ == "__main__":
         end_date = file.split("logs_")[1].split("_")[3].strip(".jsonl")
         print(f"Chain: {chain} \nStart date: {start_date} \nEnd date: {end_date}")
 
-        # transform data
-        transform_data(chain, start_date, end_date)
+        # transform data (pass the actual file path)
+        transform_data(chain, start_date, end_date, input_file=Path(file))
 
 
 

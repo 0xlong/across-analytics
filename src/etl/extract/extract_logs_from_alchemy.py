@@ -25,28 +25,14 @@ from extract_utils import get_block_from_date
 # Load environment variables
 load_dotenv()
 
-# ========================================
-# CHAIN SELECTION - Change this to switch chains
-# ========================================
-CHAIN = "bsc"  # Options: "base", "optimism", "bsc"
-
-# Date range from config
-START_DATE = RUN_CONFIG["start_date"]
-END_DATE = RUN_CONFIG["end_date"]
-
 # Configuration
 ALCHEMY_API_KEY = os.getenv("ALCHEMY_API_KEY")
+ALCHEMY_API_KEY_2 = os.getenv("ALCHEMY_API_KEY_2")
 
 # Load chain configuration from tokens_contracts_per_chain.json
 PROJECT_ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "..")
 with open(os.path.join(PROJECT_ROOT, "data", "seeds", "tokens_contracts_per_chain.json")) as f:
     CHAIN_CONFIG = json.load(f)
-
-# Apply chain-specific settings
-ACTIVE_RPC_URL = CHAIN_SETTINGS[CHAIN]["rpc_url"]
-SPOKEPOOL_ADDRESS = CHAIN_CONFIG[CHAIN]["spoke_pool_contract"]
-MORALIS_CHAIN = CHAIN_SETTINGS[CHAIN]["moralis_chain"]
-EVENT_TOPICS = CHAIN_CONFIG[CHAIN]["topics"]
 
 # Alchemy free tier limit - MUST be 10 for free tier!
 BLOCKS_PER_REQUEST = 10
@@ -55,10 +41,17 @@ BLOCKS_PER_REQUEST = 10
 RECEIPT_BATCH_SIZE = 50
 
 # Save interval in seconds (5 minutes)
-SAVE_INTERVAL_SECONDS = 300
+SAVE_INTERVAL_SECONDS = 60
 
-# Output file (final enriched output)
-OUTPUT_FILE = os.path.join(PROJECT_ROOT, "data", "raw", "etherscan_api", f"logs_{CHAIN}_{START_DATE}_to_{END_DATE}.jsonl")
+# Global variables (set per chain in run_extraction_for_chain)
+CHAIN = None
+CHAIN = None
+ACTIVE_RPC_URL = None
+GAS_RPC_URL = None
+SPOKEPOOL_ADDRESS = None
+MORALIS_CHAIN = None
+EVENT_TOPICS = None
+OUTPUT_FILE = None
 
 
 def create_session() -> requests.Session:
@@ -116,15 +109,20 @@ def fetch_receipt_batch(tx_hashes: list, max_retries: int = 5) -> dict:
     """
     Fetch multiple transaction receipts in a single batch RPC call.
     Returns dict mapping tx_hash -> receipt data.
+    Tracks null results and retries them.
     """
     payload = [
         {"jsonrpc": "2.0", "id": idx, "method": "eth_getTransactionReceipt", "params": [tx_hash]}
         for idx, tx_hash in enumerate(tx_hashes)
     ]
     
+    # Map id back to tx_hash for tracking null results
+    id_to_hash = {idx: tx_hash for idx, tx_hash in enumerate(tx_hashes)}
+    
     for attempt in range(max_retries):
         try:
-            response = SESSION.post(ACTIVE_RPC_URL, json=payload, timeout=30)
+            # Use GAS_RPC_URL for receipts (allows using secondary key)
+            response = SESSION.post(GAS_RPC_URL, json=payload, timeout=30)
             
             if response.status_code == 429:
                 wait_time = 2 ** attempt
@@ -142,7 +140,10 @@ def fetch_receipt_batch(tx_hashes: list, max_retries: int = 5) -> dict:
                 continue
             
             receipts = {}
+            null_hashes = []
+            
             for r in results:
+                req_id = r.get("id")
                 if "result" in r and r["result"]:
                     receipt = r["result"]
                     receipts[receipt["transactionHash"]] = {
@@ -151,6 +152,18 @@ def fetch_receipt_batch(tx_hashes: list, max_retries: int = 5) -> dict:
                         "gasPrice": receipt.get("gasPrice"),
                         "status": receipt.get("status"),
                     }
+                elif req_id is not None and req_id in id_to_hash:
+                    # Track tx hashes that returned null
+                    null_hashes.append(id_to_hash[req_id])
+            
+            # Retry null results individually after a delay (may be pending)
+            if null_hashes:
+                time.sleep(1)  # Wait for pending txs
+                for tx_hash in null_hashes:
+                    retry_receipt = fetch_single_receipt(tx_hash)
+                    if retry_receipt:
+                        receipts[tx_hash] = retry_receipt
+            
             return receipts
                 
         except Exception as e:
@@ -162,6 +175,41 @@ def fetch_receipt_batch(tx_hashes: list, max_retries: int = 5) -> dict:
                 return {}
     
     return {}
+
+
+def fetch_single_receipt(tx_hash: str, max_retries: int = 3) -> dict | None:
+    """Fetch a single transaction receipt with retries."""
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getTransactionReceipt",
+        "params": [tx_hash]
+    }
+    
+    for attempt in range(max_retries):
+        try:
+            response = SESSION.post(GAS_RPC_URL, json=payload, timeout=30)
+            
+            if response.status_code == 429:
+                time.sleep(2 ** attempt)
+                continue
+            
+            response.raise_for_status()
+            result = response.json()
+            
+            if "result" in result and result["result"]:
+                receipt = result["result"]
+                return {
+                    "gasUsed": receipt.get("gasUsed"),
+                    "effectiveGasPrice": receipt.get("effectiveGasPrice"),
+                    "gasPrice": receipt.get("gasPrice"),
+                    "status": receipt.get("status"),
+                }
+        except Exception:
+            if attempt < max_retries - 1:
+                time.sleep(1)
+    
+    return None
 
 
 def fetch_all_receipts(logs: list) -> dict:
@@ -210,6 +258,13 @@ def enrich_logs_with_gas(logs: list, receipts: dict) -> list:
             log["gasPrice"] = receipts[tx_hash].get("effectiveGasPrice") or receipts[tx_hash].get("gasPrice")
             enriched_count += 1
         
+        if not log.get("gasPrice"):
+            print(f"⚠️ Missing gas price for log: {tx_hash}")
+            if tx_hash in receipts:
+                print(f"   Receipt data: {receipts[tx_hash]}")
+            else:
+                print(f"   Receipt NOT found in batch fetch.")
+
         enriched.append(log)
     
     print(f"✅ Enriched {enriched_count}/{len(logs)} logs with gas data")
@@ -393,25 +448,61 @@ def extract_and_enrich(from_block: int, to_block: int):
         raise
 
 
-if __name__ == "__main__":
+def run_extraction_for_chain(chain_name: str, start_date: str, end_date: str):
+    """Run extraction for a single chain."""
+    global CHAIN, ACTIVE_RPC_URL, SPOKEPOOL_ADDRESS, MORALIS_CHAIN, EVENT_TOPICS, OUTPUT_FILE
+    
+    # Set chain-specific variables
+    CHAIN = chain_name
+    ACTIVE_RPC_URL = CHAIN_SETTINGS[chain_name]["rpc_url"]
+    
+    # Configure gas RPC URL (use Key 2 if available)
+    global GAS_RPC_URL
+    if ALCHEMY_API_KEY_2 and ALCHEMY_API_KEY and ALCHEMY_API_KEY in ACTIVE_RPC_URL:
+        GAS_RPC_URL = ACTIVE_RPC_URL.replace(ALCHEMY_API_KEY, ALCHEMY_API_KEY_2)
+        print("✓ Using Secondary API Key (Key 2) for Gas Receipts")
+    else:
+        GAS_RPC_URL = ACTIVE_RPC_URL
+        if ALCHEMY_API_KEY_2:
+            print("⚠️ Key 2 found but could not be applied (Key 1 not found in URL)")
+
+    SPOKEPOOL_ADDRESS = CHAIN_CONFIG[chain_name]["spoke_pool_contract"]
+    MORALIS_CHAIN = CHAIN_SETTINGS[chain_name]["moralis_chain"]
+    EVENT_TOPICS = CHAIN_CONFIG[chain_name]["topics"]
+    OUTPUT_FILE = os.path.join(PROJECT_ROOT, "data", "raw", "alchemy_api", f"logs_{chain_name}_{start_date}_to_{end_date}.jsonl")
+    
     print("\n" + "="*60)
-    print(f"Alchemy API - {CHAIN.upper()} Mainnet Extraction + Gas Enrichment")
-    print(f"Date range: {START_DATE} to {END_DATE}")
+    print(f"Alchemy API - {chain_name.upper()} Mainnet Extraction + Gas Enrichment")
+    print(f"Date range: {start_date} to {end_date}")
     print("="*60)
     
     # Fetch block numbers from Moralis API
-    print(f"\nFetching block numbers for {CHAIN} from {START_DATE} to {END_DATE}...")
-    FROM_BLOCK = get_block_from_date(MORALIS_CHAIN, START_DATE)
-    TO_BLOCK = get_block_from_date(MORALIS_CHAIN, END_DATE)
-    print(f"  FROM_BLOCK: {FROM_BLOCK}")
-    print(f"  TO_BLOCK: {TO_BLOCK}")
+    print(f"\nFetching block numbers for {chain_name} from {start_date} to {end_date}...")
+    from_block = get_block_from_date(MORALIS_CHAIN, start_date)
+    to_block = get_block_from_date(MORALIS_CHAIN, end_date)
+    print(f"  FROM_BLOCK: {from_block}")
+    print(f"  TO_BLOCK: {to_block}")
     
-    if FROM_BLOCK and TO_BLOCK:
-        # Run combined extraction
-        logs = extract_and_enrich(FROM_BLOCK, TO_BLOCK)
-        
+    if from_block and to_block:
+        logs = extract_and_enrich(from_block, to_block)
         print(f"\n{'='*60}")
-        print("Extraction complete!")
+        print(f"Extraction complete for {chain_name.upper()}!")
         print(f"{'='*60}\n")
+        return logs 
     else:
-        print("❌ Failed to get block numbers from Moralis API")
+        print(f"❌ Failed to get block numbers from Moralis API for {chain_name}")
+        return []
+
+
+if __name__ == "__main__":
+    # Loop through all Alchemy chains from config
+    for chain in RUN_CONFIG["chains_alchemy"]:
+        run_extraction_for_chain(
+            chain_name=chain,
+            start_date=RUN_CONFIG["start_date"],
+            end_date=RUN_CONFIG["end_date"]
+        )
+    
+    print("\n" + "="*60)
+    print("All Alchemy chain extractions complete!")
+    print("="*60 + "\n")

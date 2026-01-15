@@ -12,7 +12,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from config import PATHS
 
 PROJECT_ROOT = PATHS["project_root"]
-RAW_DIR = PROJECT_ROOT / "data" / "raw" / "etherscan_api"
+RAW_DIRS = [
+    PROJECT_ROOT / "data" / "raw" / "etherscan_api",
+    PROJECT_ROOT / "data" / "raw" / "alchemy_api"
+]
 PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 
 
@@ -62,10 +65,15 @@ def validate_gas_fields(file_path: Path) -> dict:
 def validate_transforms():
     """Check all raw files have corresponding processed parquet files."""
     
-    raw_files = list(RAW_DIR.glob("*.jsonl"))
+    raw_files = []
+    for raw_dir in RAW_DIRS:
+        if raw_dir.exists():
+            raw_files.extend(list(raw_dir.glob("*.jsonl")))
+        else:
+            print(f"⚠ Warning: Directory not found: {raw_dir}")
     
     if not raw_files:
-        print("⚠ No raw JSONL files found in:", RAW_DIR)
+        print("⚠ No raw JSONL files found in configured directories.")
         return
     
     print(f"Found {len(raw_files)} raw JSONL files\n")

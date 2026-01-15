@@ -76,9 +76,6 @@ def api_call(params):
     return {"status": "0", "result": []}
 
 
-
-
-
 def get_block_number(timestamp):
     """
     Converts timestamp to blockchain block number.
@@ -354,7 +351,7 @@ def main():
     Both use the SAME core logic, keeping code DRY (Don't Repeat Yourself).
     """
     # Use run config from config.py
-    for chain in RUN_CONFIG["chains"]:
+    for chain in RUN_CONFIG["chains_etherscan"]:
         print(f"\n{'='*60}")
         print(f"Extracting: {chain}")
         print(f"{'='*60}")

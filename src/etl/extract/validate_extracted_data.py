@@ -40,7 +40,9 @@ def validate_logs_jsonl(file_path: Path) -> Tuple[bool, Optional[str], Optional[
         "logIndex": "0x...",
         "topics": ["0x...event_sig", ...],
         "data": "0x...",
-        "address": "0x..."
+        "address": "0x...",
+        "gasPrice": "0x...",  # Added during extraction
+        "gasUsed": "0x..."    # Added during extraction
     }
     
     Args:
@@ -69,6 +71,8 @@ def validate_logs_jsonl(file_path: Path) -> Tuple[bool, Optional[str], Optional[
         tx_hashes = set()
         seen_keys = set()
         duplicate_count = 0
+        logs_with_gas = 0
+        logs_without_gas = 0
         
         with open(file_path, 'r', encoding='utf-8') as f:
             for line_num, line in enumerate(f, 1):
@@ -113,6 +117,21 @@ def validate_logs_jsonl(file_path: Path) -> Tuple[bool, Optional[str], Optional[
                     duplicate_count += 1
                 seen_keys.add(key)
                 
+                # Check for gas data fields
+                has_gas_price = "gasPrice" in record and record["gasPrice"]
+                has_gas_used = "gasUsed" in record and record["gasUsed"]
+                if has_gas_price and has_gas_used:
+                    # Validate gas fields are valid hex
+                    gas_price = record.get("gasPrice", "")
+                    gas_used = record.get("gasUsed", "")
+                    if isinstance(gas_price, str) and gas_price.startswith("0x") and \
+                       isinstance(gas_used, str) and gas_used.startswith("0x"):
+                        logs_with_gas += 1
+                    else:
+                        logs_without_gas += 1
+                else:
+                    logs_without_gas += 1
+                
                 records.append(record)
                 tx_hashes.add(tx_hash)
                 
@@ -134,7 +153,10 @@ def validate_logs_jsonl(file_path: Path) -> Tuple[bool, Optional[str], Optional[
             "min_block": min(block_numbers) if block_numbers else None,
             "max_block": max(block_numbers) if block_numbers else None,
             "unique_transactions": len(tx_hashes),
-            "file_size_bytes": file_size
+            "file_size_bytes": file_size,
+            "logs_with_gas": logs_with_gas,
+            "logs_without_gas": logs_without_gas,
+            "gas_coverage": f"{logs_with_gas}/{len(records)}" if records else "0/0"
         }
         
         return True, None, len(records), metadata
@@ -365,51 +387,45 @@ def validate(file_path: Path) -> Tuple[bool, Optional[str], Optional[int], Optio
 # =============================================================================
 
 if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Validate extracted raw data files")
-    parser.add_argument("--file", "-f", type=str, help="Path to specific file to validate")
-    parser.add_argument("--dir", "-d", type=str, help="Directory to scan for files")
-    
-    args = parser.parse_args()
-    
     print("\n" + "=" * 60)
     print("Extract Data Validation")
     print("=" * 60 + "\n")
     
-    if args.file:
-        # Validate single file
-        file_path = Path(args.file)
-        print(f"Validating: {file_path}")
-        is_valid, error, count, metadata = validate(file_path)
-        
-        if is_valid:
-            print(f"✓ VALID - {count:,} records")
-            if metadata:
-                for key, value in metadata.items():
-                    print(f"  {key}: {value}")
-        else:
-            print(f"✗ INVALID: {error}")
+    # Validate all files in raw directory
+    raw_dir = PATHS.get("raw_data", Path("data/raw"))
+    print(f"Scanning: {raw_dir}\n")
     
+    files = list(raw_dir.glob("**/*.jsonl")) + list(raw_dir.glob("**/*.csv"))
+    
+    if not files:
+        print("No files found.")
     else:
-        # Validate all files in raw directory
-        raw_dir = Path(args.dir) if args.dir else PATHS.get("raw_data", Path("data/raw"))
-        print(f"Scanning: {raw_dir}\n")
+        valid_count = 0
+        gas_issues_count = 0
+        for file_path in sorted(files):
+            is_valid, error, count, metadata = validate(file_path)
+            if is_valid:
+                # Check for gas coverage in JSONL log files
+                gas_info = ""
+                if file_path.suffix == ".jsonl" and metadata and "logs_with_gas" in metadata:
+                    logs_with_gas = metadata.get("logs_with_gas", 0)
+                    logs_without_gas = metadata.get("logs_without_gas", 0)
+                    if logs_without_gas == 0 and logs_with_gas > 0:
+                        gas_info = f" | Gas: ✓ {logs_with_gas}/{count}"
+                    elif logs_without_gas > 0:
+                        gas_info = f" | Gas: ⚠ {logs_with_gas}/{count} (missing: {logs_without_gas})"
+                        gas_issues_count += 1
+                    else:
+                        gas_info = " | Gas: N/A"
+                
+                print(f"✓ {file_path.name}: {count:,} records{gas_info}")
+                valid_count += 1
+            else:
+                print(f"✗ {file_path.name}: {error}")
         
-        files = list(raw_dir.glob("**/*.jsonl")) + list(raw_dir.glob("**/*.csv"))
-        
-        if not files:
-            print("No files found.")
-        else:
-            valid_count = 0
-            for file_path in sorted(files):
-                is_valid, error, count, metadata = validate(file_path)
-                if is_valid:
-                    print(f"✓ {file_path.name}: {count:,} records")
-                    valid_count += 1
-                else:
-                    print(f"✗ {file_path.name}: {error}")
-            
-            print(f"\n{valid_count}/{len(files)} files valid")
+        print(f"\n{valid_count}/{len(files)} files valid")
+        if gas_issues_count > 0:
+            print(f"⚠ {gas_issues_count} files have logs missing gas data")
     
     print("\n" + "=" * 60 + "\n")
+

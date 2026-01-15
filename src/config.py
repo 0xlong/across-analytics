@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 PATHS = {
     "project_root": PROJECT_ROOT,
-    "raw_data": PROJECT_ROOT / "data" / "raw" / "etherscan_api",
+    "raw_data": PROJECT_ROOT / "data" / "raw",
     "processed_data": PROJECT_ROOT / "data" / "processed",
     "seeds": PROJECT_ROOT / "data" / "seeds",
     "logs": PROJECT_ROOT / "logs",
@@ -48,15 +48,24 @@ ETL_CONFIG = {
 # =============================================================================
 
 RUN_CONFIG = {
-    # these chains logs will be extracted using Etherscan - extract_data_from_etherscan.py
-    "chains": ["ethereum", 
-                "arbitrum", 
-                "polygon", 
-                "linea", 
-                "worldchain", 
-                "hyperevm", 
-                "monad", 
-                "unichain"],
+    # Chains using Etherscan API (faster, free for all chains)
+    "chains_etherscan": [
+        "ethereum", 
+        "arbitrum", 
+        "polygon", 
+        "linea", 
+        "worldchain", 
+        "hyperevm", 
+        "monad", 
+        "unichain"
+    ],
+    
+    # Chains using Alchemy API (free tier only supports these 3)
+    "chains_alchemy": [
+        #"base",
+        "optimism",
+        #"bsc"
+    ],
                 
     "start_date": "2026-01-05",
     "end_date": "2026-01-06",
