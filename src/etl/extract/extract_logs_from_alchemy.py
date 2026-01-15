@@ -41,7 +41,7 @@ def get_block_from_date(chain: str, date: str) -> int | None:
     Fetch block number for a specific date using Moralis API.
     
     Args:
-        chain: Chain name (e.g., 'bsc', 'eth', 'polygon', 'base', 'optimism')
+        chain: Chain name (e.g., 'bsc', 'eth', 'polygon', 'base', 'optimism')cls
         date: Date string in format 'YYYY-MM-DD' (e.g., '2026-01-05' from config)
     
     Returns:
@@ -193,7 +193,7 @@ def print_batch_progress(batch_count: int, total_batches: int, current: int, bat
     eta = (elapsed / batch_count) * (total_batches - batch_count) / 60 if batch_count > 0 else 0
     
     date_str = last_timestamp.strftime("%Y-%m-%d %H:%M") if last_timestamp else "..."
-    print(f"  Batch {batch_count:,}/{total_batches:,} | Blocks {current:,}-{batch_end:,} | {date_str} | {logs_in_batch} logs | Total: {total_logs:,} | {pct:.1f}% | ETA: {eta:.1f}m")
+    print(f"  Batch {batch_count:,}/{total_batches:,} | Blocks {current:}-{batch_end:} | {date_str} | {logs_in_batch} logs | Total: {total_logs:,} | {pct:.1f}% | ETA: {eta:.1f}m")
 
 
 def extract_all_logs(from_block: int, to_block: int):
