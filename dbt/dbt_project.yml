@@ -1,0 +1,98 @@
+# dbt_project.yml - Main configuration file for Across Analytics dbt project
+
+name: 'across_analytics'
+version: '1.0.0'
+
+# Profile configuration - tells dbt which database connection to use
+# This references a profile name in ~/.dbt/profiles.yml
+profile: 'across_analytics'
+
+# Model paths - where dbt looks for your SQL model files
+# dbt will compile and run all .sql files in these directories
+model-paths: ["models"]
+
+# Seed paths - where dbt looks for CSV seed files
+# Seeds are reference data loaded into your warehouse (like contract addresses)
+seed-paths: ["seeds"]
+
+# Macro paths - where dbt looks for reusable SQL macros
+# Macros are like functions in SQL (e.g., hex_to_address)
+macro-paths: ["macros"]
+
+# Analysis paths - for SQL files that are analyzed but not materialized
+analysis-paths: ["analyses"]
+
+# Test paths - custom test definitions
+test-paths: ["tests"]
+
+# Snapshot paths - for tracking historical changes
+snapshot-paths: ["snapshots"]
+
+# Documentation paths - markdown files for documentation
+docs-paths: ["docs"]
+
+# Target path - where dbt writes compiled SQL and logs
+target-path: "target"
+
+# Clean target path - removes compiled files before running
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Model configurations - default settings for all models
+# These can be overridden in individual model files or subdirectories
+models:
+  across_analytics:
+    # Staging layer configuration
+    # Staging models clean and standardize raw data from bronze layer
+    
+    staging:
+      # Materialized as views by default - fast, no storage cost, always fresh
+      # Views are virtual tables that run the SQL query each time they're accessed
+      materialized: view
+      +schema: staging 
+      # Apply these settings to all staging subdirectories (chains)
+      # Each chain folder (ethereum, arbitrum, etc.) inherits these settings
+      "+enabled": true
+    
+    # Intermediate layer configuration (if you add this later)
+    # Intermediate models combine staging models for business logic
+    intermediate:
+      materialized: view
+      +schema: intermediate
+      "+enabled": true
+    
+    # Marts layer configuration (if you add this later)
+    # Marts are final business-ready tables for analytics
+    marts:
+      # Materialized as tables - stored data, faster queries, can be incremental
+      materialized: table
+      +schema: marts
+      "+enabled": true
+
+# Variables - reusable values you can reference in models
+# Use {{ var('variable_name') }} in your SQL files
+vars:
+  # List of supported chains - makes it easy to add/remove chains
+  supported_chains:
+    - arbitrum
+    - bsc
+    - optimism
+    - base
+    - ethereum
+    - hyperevm
+    - linea
+    - monad
+    - polygon
+    - unichain
+    - worldchain
+  
+  # Database schema configuration
+  # Schema is like a namespace in your database (e.g., staging, marts)
+  default_schema: "across_analytics"
+  
+  # Project metadata
+  project_name: "Across Analytics"
+  project_description: "Analytics for Across Protocol bridge transactions"
+
+require-dbt-version: ">=1.0.0"
