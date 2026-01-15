@@ -9,7 +9,7 @@ WITH raw_fills AS (
         filled_relay_data_repayment_chain_id, filled_relay_data_exclusive_relayer,
         filled_relay_data_depositor, filled_relay_data_recipient,
         gas_price_wei, gas_used
-    FROM raw.hyperevm_logs_processed
+    FROM {{ source('raw_hyperevm', 'hyperevm_logs_processed') }}
     WHERE topic_0 = '0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208'
         AND filled_relay_data_input_amount IS NOT NULL
         AND filled_relay_data_output_amount IS NOT NULL

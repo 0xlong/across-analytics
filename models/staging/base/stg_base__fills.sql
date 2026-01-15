@@ -21,7 +21,7 @@ WITH raw_fills AS (
         gas_price_wei,
         gas_used
         
-    FROM raw.base_logs_processed
+    FROM {{ source('raw_base', 'base_logs_processed') }}
     
     WHERE topic_0 = '0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208'
         AND filled_relay_data_input_amount IS NOT NULL

@@ -136,6 +136,7 @@ project_context/
 # Visual Studio Code
 .vscode/
 *.code-workspace
+.aiexclude
 
 # PyCharm / JetBrains
 .idea/

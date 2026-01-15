@@ -31,7 +31,7 @@ WITH raw_fills AS (
         gas_price_wei,
         gas_used
         
-    FROM raw.polygon_logs_processed
+    FROM {{ source('raw_polygon', 'polygon_logs_processed') }}
     
     -- Filter: Only include rows where FilledRelay data exists
     WHERE topic_0 = '0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208'

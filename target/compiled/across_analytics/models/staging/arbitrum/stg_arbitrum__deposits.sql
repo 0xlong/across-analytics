@@ -29,7 +29,7 @@ WITH raw_deposits AS (
         -- funds_deposited_data_exclusivity_deadline,  -- Deadline for exclusive relayer rights
         -- funds_deposited_data_exclusive_relayer      -- Address with exclusive fill rights (if any)
         
-    FROM raw.arbitrum_logs_processed
+    FROM "across_analytics"."raw"."arbitrum_logs_processed"
     
     -- Filter: Only include rows where FundsDeposited data exists
     -- Topic_0 is the event signature hash that identifies the event type

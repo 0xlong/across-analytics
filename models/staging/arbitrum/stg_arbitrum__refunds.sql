@@ -23,7 +23,7 @@ WITH raw_refunds AS (
         refund_addresses,                -- Comma-separated list of relayer addresses receiving refunds
         refund_count                     -- Number of relayers being refunded in this batch
         
-    FROM raw.arbitrum_logs_processed
+    FROM {{ source('raw_arbitrum', 'arbitrum_logs_processed') }}
     
     -- Filter: Only include rows where ExecutedRelayerRefundRoot data exists
     -- Topic_0 is the event signature hash that identifies the event type

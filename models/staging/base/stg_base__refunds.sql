@@ -16,7 +16,7 @@ WITH raw_refunds AS (
         refund_addresses,
         refund_count
         
-    FROM raw.base_logs_processed
+    FROM {{ source('raw_base', 'base_logs_processed') }}
     
     WHERE topic_0 = '0xf4ad92585b1bc117fbdd644990adf0827bc4c95baeae8a23322af807b6d0020e'
         AND amount_to_return IS NOT NULL

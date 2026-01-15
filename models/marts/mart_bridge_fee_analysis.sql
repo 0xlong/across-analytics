@@ -25,21 +25,10 @@ WITH base_data AS (
     WHERE is_filled = TRUE  -- Only filled deposits have fee data
 ),
 
--- Chain name mapping
+-- Chain name mapping (from centralized seed)
 chain_names AS (
-    SELECT 
-        chain_id,
-        chain_name
-    FROM (VALUES
-        (1, 'Ethereum'),
-        (42161, 'Arbitrum'),
-        (137, 'Polygon'),
-        (59144, 'Linea'),
-        (480, 'Worldchain'),
-        (130, 'Unichain'),
-        (999, 'HyperEVM'),
-        (143, 'Monad')
-    ) AS chains(chain_id, chain_name)
+    SELECT chain_id, chain_name
+    FROM {{ ref('chain_metadata') }}
 ),
 
 -- Token metadata for symbol lookup

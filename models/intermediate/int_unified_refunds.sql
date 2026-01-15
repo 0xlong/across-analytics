@@ -9,15 +9,10 @@ WITH token_meta AS (
     {{ get_token_decimals_by_chain_id() }}
 ),
 
--- Chain ID to Name mapping for chains with parquet data
+-- Chain ID to Name mapping (from centralized seed)
 chain_names AS (
     SELECT chain_id, chain_name
-    FROM (
-        VALUES
-        (1, 'Ethereum'), (42161, 'Arbitrum'), (137, 'Polygon'),
-        (59144, 'Linea'), (480, 'Worldchain'), (130, 'Unichain'),
-        (999, 'HyperEVM'), (143, 'Monad'), (8453, 'Base'), (56, 'BSC'), (10, 'Optimism')
-    ) AS chains(chain_id, chain_name)
+    FROM {{ ref('chain_metadata') }}
 ),
 
 -- Each CTE selects from a chain's staging model

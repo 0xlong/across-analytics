@@ -23,7 +23,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: [1, 42161, 137, 59144, 480, 130, 999, 143]
+              arguments:
+                values: [1, 42161, 137, 59144, 480, 130, 999, 143]
       
       - name: origin_chain_name
         description: "Human-readable origin chain name"
@@ -33,7 +34,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: [1, 42161, 137, 59144, 480, 130, 999, 143]
+              arguments:
+                values: [1, 42161, 137, 59144, 480, 130, 999, 143]
       
       - name: destination_chain_name
         description: "Human-readable destination chain name"
@@ -123,14 +125,16 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: [1, 42161, 137, 59144, 480, 130, 999, 143]
+              arguments:
+                values: [1, 42161, 137, 59144, 480, 130, 999, 143]
       
       - name: destination_chain_id
         description: "Chain ID where funds are sent"
         tests:
           - not_null
           - accepted_values:
-              values: [1, 42161, 137, 59144, 480, 130, 999, 143]
+              arguments:
+                values: [1, 42161, 137, 59144, 480, 130, 999, 143]
       
       - name: route_id
         description: "Route identifier"
@@ -212,7 +216,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['CRITICAL', 'HIGH', 'MODERATE', 'HEALTHY']
+              arguments:
+                values: ['CRITICAL', 'HIGH', 'MODERATE', 'HEALTHY']
 
       # PARTICIPANT METRICS
       - name: unique_relayers
@@ -240,14 +245,16 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: [1, 42161, 137, 59144, 480, 130, 999, 143]
+              arguments:
+                values: [1, 42161, 137, 59144, 480, 130, 999, 143]
       
       - name: destination_chain_id
         description: "Chain ID where funds are sent"
         tests:
           - not_null
           - accepted_values:
-              values: [1, 42161, 137, 59144, 480, 130, 999, 143]
+              arguments:
+                values: [1, 42161, 137, 59144, 480, 130, 999, 143]
       
       - name: route_id
         description: "Route identifier"
@@ -311,14 +318,16 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['OVERPRICED', 'HIGH', 'COMPETITIVE', 'AGGRESSIVE', 'VERY_LOW']
+              arguments:
+                values: ['OVERPRICED', 'HIGH', 'COMPETITIVE', 'AGGRESSIVE', 'VERY_LOW']
       
       - name: fee_volatility_tier
         description: "Fee stability: HIGH_VOLATILITY, MODERATE_VOLATILITY, LOW_VOLATILITY, or STABLE"
         tests:
           - not_null
           - accepted_values:
-              values: ['HIGH_VOLATILITY', 'MODERATE_VOLATILITY', 'LOW_VOLATILITY', 'STABLE']
+              arguments:
+                values: ['HIGH_VOLATILITY', 'MODERATE_VOLATILITY', 'LOW_VOLATILITY', 'STABLE']
 
       # PARTICIPANT METRICS
       - name: unique_depositors
@@ -353,4 +362,5 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['VERY_HIGH', 'HIGH', 'MEDIUM', 'LOW', 'VERY_LOW']
+              arguments:
+                values: ['VERY_HIGH', 'HIGH', 'MEDIUM', 'LOW', 'VERY_LOW']

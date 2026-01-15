@@ -12,26 +12,10 @@
 -- {{ config(materialized='table') }} for faster superset charts loading
 
 
--- Chain ID to Name mapping for chains with parquet data
+-- Chain ID to Name mapping (from centralized seed)
 WITH chain_names AS (
-    SELECT 
-        chain_id,
-        chain_name
-    FROM (
-        VALUES
-        -- Only chains we have parquet data for:
-        (1, 'Ethereum'),
-        (42161, 'Arbitrum'),
-        (137, 'Polygon'),
-        (59144, 'Linea'),
-        (480, 'Worldchain'),
-        (130, 'Unichain'),
-        (999, 'HyperEVM'),
-        (143, 'Monad'),
-        (8453, 'Base'),
-        (56, 'BSC'),
-        (10, 'Optimism')
-    ) AS chains(chain_id, chain_name)
+    SELECT chain_id, chain_name
+    FROM {{ ref('chain_metadata') }}
 ),
 
 -- Token metadata for symbol lookups

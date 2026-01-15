@@ -22,7 +22,7 @@ WITH raw_deposits AS (
         funds_deposited_data_output_amount,
         funds_deposited_data_recipient
         
-    FROM raw.polygon_logs_processed
+    FROM {{ source('raw_polygon', 'polygon_logs_processed') }}
     
     WHERE topic_0 = '0x32ed1a409ef04c7b0227189c3a103dc5ac10e775a15b785dcc510201f7c25ad3'
         AND funds_deposited_data_input_amount IS NOT NULL

@@ -24,7 +24,7 @@ WITH raw_deposits AS (
         funds_deposited_data_output_amount,         -- Expected amount to receive (in output token units)
         funds_deposited_data_recipient             -- Final recipient of the bridged funds
         
-    FROM raw.ethereum_logs_processed
+    FROM {{ source('raw_ethereum', 'ethereum_logs_processed') }}
     
     -- Filter: Only include rows where FundsDeposited data exists
     -- Topic_0 is the event signature hash that identifies the event type
