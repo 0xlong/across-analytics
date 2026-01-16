@@ -2,7 +2,7 @@
 
 [recording.webm](https://github.com/user-attachments/assets/0b0d9e3b-3422-4cfc-9bfc-79a26cd65e4f)
 
-Pipeline for extracting blockchain data, transforming it for analysis, and loading it into a PostgreSQL database to feed Superset dashboard.
+Pipeline for extracting on-chain Across protocol data, transforming it for analysis, and loading it into a PostgreSQL database to feed Superset dashboard.
 
 ## Setup
 
