@@ -198,8 +198,8 @@ def extract_all_prices(
     csv_file = output_path / f"alchemy_prices_{start_date}_to_{end_date}_{run_ts}.csv"
     df.to_csv(csv_file, index=False)
     
-    # Also save to data/seeds/token_prices.csv for dbt seeds
-    seeds_dir = PATHS["project_root"] / "data" / "seeds"
+    # Also save to dbt/seeds/token_prices.csv for dbt seeds
+    seeds_dir = PATHS["project_root"] / "dbt" / "seeds"
     seeds_dir.mkdir(parents=True, exist_ok=True)
     seeds_file = seeds_dir / "token_prices.csv"
     df.to_csv(seeds_file, index=False)

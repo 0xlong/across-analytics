@@ -25,5 +25,5 @@
         token_symbol,
         decimals
     FROM {{ ref('token_metadata') }}
-    WHERE chain = '{{ chain_name }}'
+    WHERE LOWER(chain) = LOWER('{{ chain_name }}')
 {% endmacro %}

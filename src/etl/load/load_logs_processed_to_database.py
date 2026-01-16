@@ -270,41 +270,64 @@ def load_all_parquet_files_to_raw_tables(
         print(f"No parquet files found in {processed_dir}")
         return 0
 
+    # Sort files by chain to optimize DB operations (truncate once per chain)
+    # Filename format: logs_<chain>_....parquet
+    files_by_chain = {}
+    for p_file in parquet_files:
+        try:
+            chain = p_file.name.split("_")[1]
+            if chain not in files_by_chain:
+                files_by_chain[chain] = []
+            files_by_chain[chain].append(p_file)
+        except IndexError:
+            print(f"Skipping malformed filename: {p_file.name}")
+            continue
+
     # Open a single DB connection for the entire batch; close at the end.
     conn = get_db_connection()
 
-    # load all parquet files to raw tables
     total_inserted = 0
     try:
-        for parquet_file in parquet_files:
-
-            # Table name pattern: raw_<chain>_logs_processed (schema "raw" added in SQL)
-            # Example filename: logs_arbitrum_2023.parquet -> table raw.raw_arbitrum_logs_processed
-            chain_segment = os.path.basename(parquet_file).split("_")[1]
-            table_name = f"{chain_segment}_logs_processed"
-
-            # Ensure the target table exists before loading.
+        # Process one chain at a time
+        for chain, chain_files in files_by_chain.items():
+            print(f"\nProcessing chain: {chain} ({len(chain_files)} files)")
+            
+            table_name = f"{chain}_logs_processed"
+            
+            # Step 1: Create table if missing
             try:
                 create_raw_table(conn, table_name)
-                truncate_raw_table(conn, table_name)  # Always fresh load
-                print(f"Table raw.{table_name} ready for {parquet_file.name}")
+                print(f"✓ Table raw.{table_name} ensured.")
             except Exception as e:
-                conn.rollback()  # keep connection usable for other files
-                print(f"Error preparing table {table_name} for {parquet_file.name}: {e}")
+                conn.rollback()
+                print(f"❌ Error creating table {table_name}: {e}")
                 continue
 
-            # Load data (always fresh since we truncated)
+            # Step 2: Truncate ONCE per chain (Full Refresh Strategy)
             try:
-                inserted = load_parquet_to_raw_copy(conn, parquet_file, table_name)
-                print(f"Loaded {inserted} rows from {parquet_file} into raw.{table_name}")
-                total_inserted += inserted
-                
+                truncate_raw_table(conn, table_name)
             except Exception as e:
-                # Roll back this file’s work so the next file can proceed cleanly.
                 conn.rollback()
-                print(f"Error loading {parquet_file.name} into raw.{table_name}: {e}")
+                print(f"❌ Error truncating {table_name}: {e}")
+                continue
 
-        print(f"Total rows loaded across all tables: {total_inserted}")
+            # Step 3: Load ALL files for this chain (Append)
+            for p_file in chain_files:
+                try:
+                    inserted = load_parquet_to_raw_copy(conn, p_file, table_name)
+                    print(f"  ✓ Loaded {inserted:,} rows from {p_file.name}")
+                    total_inserted += inserted
+                except Exception as e:
+                    conn.rollback()
+                    print(f"  ❌ Error loading {p_file.name}: {e}")
+                    # Decide: fail the whole chain? or skip file?
+                    # For now, we skip the file but warn deeply.
+            
+            # Commit after processing all files for the chain
+            conn.commit()
+            print(f"✓ Committed all data for {chain}.\n")
+
+        print(f"Total rows loaded across all tables: {total_inserted:,}")
         return total_inserted
     finally:
         conn.close()

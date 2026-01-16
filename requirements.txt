@@ -1,0 +1,6 @@
+eth-abi
+pandas
+polars
+psycopg2-binary
+python-dotenv
+requests

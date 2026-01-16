@@ -62,9 +62,9 @@ RUN_CONFIG = {
     
     # Chains using Alchemy API (free tier only supports these 3)
     "chains_alchemy": [
-        #"base",
+        "base",
         "optimism",
-        #"bsc"
+        "bsc"
     ],
                 
     "start_date": "2026-01-05",
@@ -155,6 +155,4 @@ def validate_config():
     
     return True
 
-
-# Validate on import (optional - comment out if too strict)
 # validate_config()

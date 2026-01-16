@@ -71,10 +71,10 @@ def get_chain_params(chain_name: str, json_path: Path = None) -> Optional[Dict[s
     --------
     Dict or None: Chain configuration dict, or None if chain not found
     """
-    # Default path: project_root/data/seeds/tokens_contracts_per_chain.json
+    # Default path: project_root/dbt/seeds/tokens_contracts_per_chain.json
     if json_path is None:
         project_root = Path(__file__).parent.parent.parent.parent
-        json_path = project_root / "data" / "seeds" / "tokens_contracts_per_chain.json"
+        json_path = project_root / "dbt" / "seeds" / "tokens_contracts_per_chain.json"
     
     with open(json_path, 'r', encoding='utf-8') as file:
         chains_data = json.load(file)
