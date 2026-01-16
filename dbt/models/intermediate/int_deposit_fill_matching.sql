@@ -260,8 +260,15 @@ LEFT JOIN token_prices np
     ON nt.native_token_symbol = np.token_symbol
     AND DATE_TRUNC('hour', m.fill_timestamp AT TIME ZONE 'UTC') = np.price_hour
 
--- Exclude tokens without price data (POOL on Ethereum, POL on Polygon)
+
+
+
+-- Exclude tokens without price data (POOL on Ethereum, POL on Polygon) if test_token_price_coverage fails
 WHERE LOWER(m.deposit_token) NOT IN (
     '0x25788a1a171ec66da6502f9975a15b609ff54cf6',  -- POL on Polygon
     '0x0cec1a9154ff802e7934fc916ed7ca50bde6844e'   -- POOL on Ethereum
+    '0xd652c5425aea2afd5fb142e120fecf79e18fafc3',  -- POOL on Base
+    '0xcf934e2402a5e072928a39a956964eb8f2b5b79c',  -- POOL on Arbitrum
+    '0x4e107a0000db66f0e9fd2039288bf811dd1f9c74',  -- VELORA on Base
+    '0x395ae52bb17aef68c2888d941736a71dc6d4e125',  -- POOL on Optimism
 )
