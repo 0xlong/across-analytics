@@ -5,7 +5,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Across Protocol Analytics Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg-primary: #0f1419;
+            --bg-secondary: #1a1f26;
+            --bg-card: rgba(30, 37, 46, 0.7);
+            --accent: #6feac5;
+            --accent-secondary: #44d7a8;
+            --text-primary: #e7e9ea;
+            --text-secondary: #8b98a5;
+            --border: rgba(255, 255, 255, 0.08);
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -13,34 +26,71 @@
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #0f0f0f;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
             min-height: 100vh;
         }
 
-        header {
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            padding: 20px 40px;
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            border-bottom: 1px solid #2a2a4a;
+            gap: 12px;
         }
 
-        .logo {
-            color: #6cf5c2;
-            font-size: 1.5rem;
-            font-weight: 600;
+        .header h1 span {
+            color: var(--accent);
         }
 
-        .subtitle {
-            color: #888;
-            font-size: 0.9rem;
+        .nav-buttons {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .nav-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(111, 234, 197, 0.1);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            padding: 8px 16px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .nav-btn:hover {
+            background: rgba(111, 234, 197, 0.2);
+            transform: translateY(-1px);
         }
 
         .dashboard-container {
             width: 100%;
-            height: calc(100vh - 80px);
+            height: calc(100vh - 120px);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
         }
 
         iframe {
@@ -48,21 +98,57 @@
             height: 100%;
             border: none;
         }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                gap: 16px;
+                text-align: center;
+            }
+
+            .nav-buttons {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+        }
     </style>
 </head>
 
 <body>
-    <header>
-        <div>
-            <div class="logo">📊 Across Protocol Analytics</div>
-            <div class="subtitle">Bridge Transaction Dashboard</div>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1><img src="assets/across_logo.png" alt="Across" style="height: 32px; vertical-align: middle;"> Across
+                Analytics Dashboard</h1>
+            <div class="nav-buttons">
+                <a href="index.html" class="nav-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="8" x2="12" y2="16" />
+                        <line x1="8" y1="12" x2="16" y2="12" />
+                    </svg>
+                    Deposits Monitor
+                </a>
+                <a href="sankey.html" class="nav-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 3v18h18" />
+                        <path d="M18 17V9" />
+                        <path d="M13 17V5" />
+                        <path d="M8 17v-3" />
+                    </svg>
+                    Flow Diagram
+                </a>
+            </div>
+        </header>
+        <div class="dashboard-container">
+            <!-- REPLACE THE URL BELOW WITH YOUR PRESET EMBED LINK -->
+            <iframe src="https://c1f6c13c.us2a.app.preset.io/embedded/aa2b4d77-3405-4868-8c27-51e604603d9f"
+                loading="lazy" allowfullscreen>
+            </iframe>
         </div>
-    </header>
-    <div class="dashboard-container">
-        <!-- REPLACE THE URL BELOW WITH YOUR PRESET EMBED LINK -->
-        <iframe src="https://c1f6c13c.us2a.app.preset.io/embedded/aa2b4d77-3405-4868-8c27-51e604603d9f" loading="lazy"
-            allowfullscreen>
-        </iframe>
     </div>
 </body>
 
